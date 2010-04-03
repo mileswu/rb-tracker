@@ -63,6 +63,10 @@ class Tracker
 
 	private
 
+	def write_memcache
+
+	end
+
 	def read_db
 		read_users
 		read_torrents
@@ -91,7 +95,7 @@ class Tracker
 	
 	def read_torrents
 		t = Time.now.to_f
-		results = @db.query("SELECT ID, info_hash FROM torrents")
+		results = @db.query("SELECT ID, info_hash, FreeTorrent FROM torrents")
 
 		puts "--Torrent_query: #{Time.now.to_f - t} seconds"
 		infohashes = []
@@ -99,8 +103,9 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => {}, :id => i["ID"], :marked => true }
-			end
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :marked => true, :free => (i["FreeTorrent"] == '1')}
+			else
+				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
 		end
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
 		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }

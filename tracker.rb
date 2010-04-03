@@ -27,6 +27,8 @@ class Tracker
 		@users = {}
 		@torrents = {}
 		read_users
+		read_users
+		read_torrents
 		read_torrents
 	end
 	
@@ -36,9 +38,18 @@ class Tracker
 		if(path[-9..-1] == '/announce') # format is /<passkey>/announce
 			return announce(req)
 		elsif(path == '/debug')
-			u = @users.inspect.scan(%r{.{1,80}}).join("\n")
-			t = @torrents.inspect.scan(%r{.{1,80}}).join("\n")
-			return [200, {'Content-Type' => 'text/plain'}, "#{u}\n-------\n#{t}"]
+			time = Time.now.to_f
+			body = ""
+			for i in @users
+				body << i.inspect + "\n"
+			end
+			body << "\n----------\n"
+			for i in @torrents
+				body << i.inspect + "\n"
+			end
+			puts "Debug generation took #{Time.now.to_f - time} seconds"
+
+			return [200, {'Content-Type' => 'text/plain'}, body]
 		else
 			return [200, {'Content-Type' => 'text/plain'}, "WTF are you trying to do"]
 		end
@@ -49,6 +60,7 @@ class Tracker
 	def read_users
 		t = Time.now.to_f
 		results = @db.query("SELECT ID, Enabled, torrent_pass FROM users_main")
+		puts "--User_query_merging: #{Time.now.to_f - t} second"
 
 		passkeys = []
 		results.each_hash do |i|
@@ -60,7 +72,9 @@ class Tracker
 				end
 			end
 		end
-		@users.delete_if { |k, h| !passkeys.include?(k) }
+
+		puts "--User_merging: #{Time.now.to_f - t} second"
+		(@users.keys - passkeys).each { |i| @users.delete(i) }
 		puts "Fetching users took #{Time.now.to_f - t} seconds. #{@users.length} active users"
 	end
 	
@@ -68,16 +82,17 @@ class Tracker
 		t = Time.now.to_f
 		results = @db.query("SELECT ID, info_hash FROM torrents")
 
-		puts "Fetching torrents took #{Time.now.to_f - t} seconds. #{@torrents.length} active torrents"
+		puts "--Torrent_query: #{Time.now.to_f - t} seconds"
 		infohashes = []
 		results.each_hash do |i|
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => [], :id => i["ID"] }
+				@torrents[ih] = { :peers => [], :id => i["ID"], :marked => true }
 			end
 		end
-		@torrents.delete_if { |k, h| !infohashes.include?(k) }
+		puts "--Torrent_merging: #{Time.now.to_f - t} second"
+		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }
 		puts "Fetching torrents took #{Time.now.to_f - t} seconds. #{@torrents.length} active torrents"
 	end
 

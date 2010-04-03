@@ -1,0 +1,5 @@
+Current dependencies
+JSON
+Memcached
+Libsasl2
+Thin/Rack

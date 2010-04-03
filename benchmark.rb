@@ -60,7 +60,9 @@ class Benchmarker
 
       hashes = []
       @db.query("SELECT info_hash FROM torrents").each_hash do |h|
-         hashes.push(h)
+         if(h[:info_hash].size == 20)
+            hashes.push(h)
+         end
       end
       @files = hashes
 

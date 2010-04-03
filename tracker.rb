@@ -38,6 +38,8 @@ class Tracker
 	include TrackerHelper
 
 	def initialize
+		Thread.abort_on_exception = true
+
 		@db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 		@db.reconnect = true
 		@cache = Memcached.new("localhost:11211")
@@ -45,8 +47,9 @@ class Tracker
 		@mutex = Mutex.new
 
 		read_marshal
-		sleep_loop(30, true) { @mutex.synchronize { read_db } }
-		sleep_loop(30) { @mutex.synchronize { write_marshal } }
+		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
+		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
+		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
 	end
 	
 	def call(env)
@@ -77,14 +80,17 @@ class Tracker
 	private
 
 	def read_marshal
+		puts "Opening resume file"
 		begin 
 			f = File.open("resume-state.db", "r")
 			resume = Marshal.load(f.read)
 			@users = resume[:users]
 			@torrents = resume[:torrents]
+			puts "Success"
 		rescue
 			@users = {}
 			@torrents = {}
+			puts "None found"
 		end
 	end
 
@@ -132,7 +138,7 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => {}, :id => i["ID"], :marked => true, :free => (i["FreeTorrent"] == '1')}
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1')}
 			else
 				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
 			end
@@ -140,6 +146,28 @@ class Tracker
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
 		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }
 		puts "Fetching torrents took #{Time.now.to_f - t} seconds. #{@torrents.length} active torrents"
+	end
+
+	def write_memcached
+		t = Time.now.to_f
+		@torrents.each_value do |i|
+			if i[:modified] == false # no point updating stuff when it's not changed 
+				next
+			end
+			i[:modified] = false
+
+			key = MEMCACHED_PREFIX + "tracker_torrents_" + i[:id]
+			data = i[:peers]
+
+			data.each_pair do |k, h| #Peer ids are binary
+				data[Base64.b64encode(k)] = h
+				data.delete(k)
+			end
+			data = JSON.generate(data)
+
+			@cache.set key, data, ANNOUNCE_INTERVAL*2 #To avoid edge issues with time. Since a torrent *must* have new info every announce, this ensures that the data will never expire out of memcache
+		end
+		puts "Memcached writes took #{Time.now.to_f - t} seconds."
 	end
 
 	def announce(req)
@@ -178,6 +206,7 @@ class Tracker
 			resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
 			return resp.finish
 		end
+		torrent[:modified] = true # flags it for the memcache route
 
 		peer_id = get_vars['peer_id']
 		event = get_vars['event']
@@ -186,7 +215,7 @@ class Tracker
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:completed => false})
+				peer = (peers[peer_id] = {:completed => false, :start_time => Time.now.to_i})
 			end
 		end
 
@@ -197,6 +226,8 @@ class Tracker
 			peer[:port] = get_vars['port']
 			peer[:compact] = IPAddr.new(peer[:ip]).hton + [peer[:port]].pack('n') #Store this for speed
 			
+			peer[:last_announce] = Time.now.to_i
+
 			peer[:uploaded] = get_vars['uploaded']
 			peer[:downloaded] = get_vars['downloaded']
 			peer[:left] = get_vars['left']

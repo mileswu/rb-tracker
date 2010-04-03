@@ -84,7 +84,11 @@ class Benchmarker
       str = "/announce?" + file.merge(client).merge(status).to_url_params() + " HTTP/1.1"
 
       t0 = Time.now()
-      response = Net::HTTP::get("0.0.0.0", str, "6969")
+      begin
+         response = Net::HTTP::get("0.0.0.0", str, "6969")
+      rescue EOFError => err
+         puts "Server hit EOF (no response)"
+      end
       t1 = Time.now()
 
       print "Called:\n\t"

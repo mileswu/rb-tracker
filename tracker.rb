@@ -1,4 +1,4 @@
-require 'bencode'
+require 'libs/bencode'
 require 'ipaddr'
 require 'json'
 require 'mysql'

@@ -97,7 +97,6 @@ class Tracker
 	end
 
 	def read_db
-		sleep 3600
 		read_users
 		read_torrents
 	end

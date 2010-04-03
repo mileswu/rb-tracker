@@ -4,6 +4,7 @@ require 'json'
 require 'mysql'
 require 'memcached'
 require 'config'
+require 'base64'
 
 class String
 	def to_hex
@@ -12,14 +13,24 @@ class String
 end
 
 module TrackerHelper
-	def sleep_loop(time, &block)
-		t = Thread.new do
-			while 1
-				sleep time
-				yield
+	def sleep_loop(time, first=false, &block)
+		if(first)
+			t = Thread.new do
+				while 1
+					yield
+					sleep time
+				end
 			end
+			return t
+		else
+			t = Thread.new do
+				while 1
+					sleep time
+					yield
+				end
+			end
+			return t
 		end
-		return t
 	end
 end
 
@@ -29,48 +40,64 @@ class Tracker
 	def initialize
 		@db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 		@db.reconnect = true
-		@@cache = Memcached.new("localhost:11211")
+		@cache = Memcached.new("localhost:11211")
 
-		@users = {}
-		@torrents = {}
+		@mutex = Mutex.new
 
-		read_db
-		wrtie_memcache
-		sleep_loop(30) { read_db }
+		read_marshal
+		sleep_loop(30, true) { @mutex.synchronize { read_db } }
+		sleep_loop(30) { @mutex.synchronize { write_marshal } }
 	end
 	
 	def call(env)
-		req = Rack::Request.new(env)
-		path = req.path
-		if(path[-9..-1] == '/announce') # format is /<passkey>/announce
-			return announce(req)
-		elsif(path == '/debug')
-			time = Time.now.to_f
-			body = ""
-			for i in @users
-				body << i.inspect + "\n"
-			end
-			body << "\n----------\n"
-			for i in @torrents
-				body << i.inspect + "\n"
-			end
-			puts "Debug generation took #{Time.now.to_f - time} seconds"
+		@mutex.synchronize do
+			req = Rack::Request.new(env)
+			path = req.path
+			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
+				return announce(req)
+			elsif(path == '/debug')
+				time = Time.now.to_f
+				body = ""
+				for i in @users
+					body << i.inspect + "\n"
+				end
+				body << "\n----------\n"
+				for i in @torrents
+					body << i.inspect + "\n"
+				end
+				puts "Debug generation took #{Time.now.to_f - time} seconds"
 
-			return [200, {'Content-Type' => 'text/plain'}, body]
-		else
-			return [200, {'Content-Type' => 'text/plain'}, "WTF are you trying to do"]
+				return [200, {'Content-Type' => 'text/plain'}, body]
+			else
+				return [200, {'Content-Type' => 'text/plain'}, "WTF are you trying to do"]
+			end
 		end
 	end
 
 	private
 
-	def write_memcache
+	def read_marshal
+		begin 
+			f = File.open("resume-state.db", "r")
+			resume = Marshal.load(f.read)
+			@users = resume[:users]
+			@torrents = resume[:torrents]
+		rescue
+			@users = {}
+			@torrents = {}
+		end
+	end
+
+	def write_marshal
 		t = Time.now.to_f
-		puts(JSON.generate(@torrents).length)
-		puts "Memcache generation took #{Time.now.to_f - t} seconds"
+		f = File.open("resume-state.db", "w")
+		f.write(Marshal.dump({:users => @users, :torrents=> @torrents}))
+		f.close
+		puts "Marshal generation took #{Time.now.to_f - t} seconds"
 	end
 
 	def read_db
+		sleep 3600
 		read_users
 		read_torrents
 	end

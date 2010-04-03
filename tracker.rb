@@ -49,7 +49,8 @@ class Tracker
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
 		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
+		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }@
+		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 	end
 	
 	def call(env)
@@ -118,7 +119,7 @@ class Tracker
 				p = i["torrent_pass"]
 				passkeys << p
 				if(@users[p].nil?)
-					@users[p] = { :id => i["ID"] }
+					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0 }
 				end
 			end
 		end
@@ -138,7 +139,7 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1')}
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1'), :modified => true}
 			else
 				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
 			end
@@ -169,6 +170,37 @@ class Tracker
 		end
 		puts "Memcached writes took #{Time.now.to_f - t} seconds."
 	end
+
+	def write_db
+		t = Time.now.to_f
+		#Update users stats first
+		query = "INSERT INTO users_main (ID, Uploaded, Downloaded) VALUES\n"
+		@users.each_value do |i|
+			next if i[:delta_up] == 0 and i[:delta_down] == 0
+			query += "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')\n"
+			i[:delta_up] = 0
+			i[:delta_down] = 0
+		end
+		query += "ON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded)"
+		puts query
+		@db.query(query)
+		puts "Updating user stats took #{Time.now.to_f - t} seconds."
+
+		t = Time.now.to_f
+		#Update transfer_history
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, seedtime) VALUES\n"
+		@torrents.each_value do |i|
+			i[:peers].each do |p|
+				next if p[:modified] == false
+				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '1', '"
+			end
+		end
+		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime)"
+		puts query
+		@db.query(query)
+		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
+	end
+
 
 	def announce(req)
 		resp = Rack::Response.new("", 200, {'Content-Type' => 'text/plain'})
@@ -215,12 +247,13 @@ class Tracker
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:completed => false, :start_time => Time.now.to_i})
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0})
 			end
 		end
+		peer[:modified] = true
 
 		if event == 'stopped' or event == 'paused'
-			peers.delete(peer_id) # Remove him from the peers
+			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
 			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : req.env['REMOTE_ADDR']
 			peer[:port] = get_vars['port']
@@ -228,12 +261,19 @@ class Tracker
 			
 			peer[:last_announce] = Time.now.to_i
 
-			peer[:uploaded] = get_vars['uploaded']
+			peer[:delta_up] += peer[:uploaded] - get_vars['uploaded']
+			peer[:delta_down] += peer[:downloaded] - get_vars['downloaded']
+
+			user[:delta_up] += peer[:delta_up] # Update users stats
+			user[:delta_down] += peer[:delta_down]
+
+			peer[:uploaded] = get_vars['uploaded'] # Update transfer_history
 			peer[:downloaded] = get_vars['downloaded']
+
 			peer[:left] = get_vars['left']
 			peer[:completed] = (peer[:left] == 0 ? true : false)
 			if event == 'completed' #increment snatch
-				snatched_completed(torrent[:id], @users[passkey][:id])
+				snatched_completed(torrent[:id], user[:id])
 			end
 		end
 		

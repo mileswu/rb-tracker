@@ -12,6 +12,15 @@ class String
 end
 
 module TrackerHelper
+	def sleep_loop(time, &block)
+		t = Thread.new do
+			while 1
+				sleep time
+				yield
+			end
+		end
+		return t
+	end
 end
 
 class Tracker
@@ -22,14 +31,11 @@ class Tracker
 		@db.reconnect = true
 		@@cache = Memcached.new("localhost:11211")
 
-
-
 		@users = {}
 		@torrents = {}
-		read_users
-		read_users
-		read_torrents
-		read_torrents
+
+		read_db
+		sleep_loop(30) { read_db }
 	end
 	
 	def call(env)
@@ -56,6 +62,11 @@ class Tracker
 	end
 
 	private
+
+	def read_db
+		read_users
+		read_torrents
+	end
 
 	def read_users
 		t = Time.now.to_f
@@ -88,7 +99,7 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => [], :id => i["ID"], :marked => true }
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :marked => true }
 			end
 		end
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
@@ -129,10 +140,8 @@ class Tracker
 		info_hash = get_vars['info_hash']
 		torrent = @torrents[info_hash]
 		if torrent.nil?
-			#resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
-			#return resp.finish
-			@torrents[info_hash] = {:peers => {}}
-			torrent = @torrents[info_hash]
+			resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
+			return resp.finish
 		end
 
 		peer_id = get_vars['peer_id']
@@ -158,6 +167,7 @@ class Tracker
 			peer[:left] = get_vars['left']
 			peer[:completed] = (peer[:left] == 0 ? true : false)
 			if event == 'completed' #increment snatch
+				snatched_completed(torrent[:id], @users[passkey][:id])
 			end
 		end
 		
@@ -180,6 +190,10 @@ class Tracker
 		resp.write(output.bencode)
 		puts resp.inspect
 		return resp.finish
-  end
+	end
+
+	def snatched_completed(tid, uid)
+		@db.query("INSERT INTO xbt_snatched (uid, tstamp, fid) VALUES('#{uid}', '#{Time.now.to_i}', '#{tid}')")
+	end
 end
 

@@ -159,13 +159,13 @@ class Tracker
 			key = MEMCACHED_PREFIX + "tracker_torrents_" + i[:id]
 			data = i[:peers]
 
-			data.each_pair do |k, h| #Peer ids are binary
-				data[Base64.b64encode(k)] = h
+			data.each_pair do |k, h| #Peer ids are binary, need to be base64'd
+				data[Base64.b64encode(k)] = h #This can be made shorter by removing unnecessary stuff
 				data.delete(k)
 			end
 			data = JSON.generate(data)
 
-			@cache.set key, data, ANNOUNCE_INTERVAL*2 #To avoid edge issues with time. Since a torrent *must* have new info every announce, this ensures that the data will never expire out of memcache
+			@cache.set key, data, ANNOUNCE_INTERVAL*2 #To avoid edge issues with time. Since a torrent *must* have new info every announce, this ensures that the data will never expire out of memcache. THERE IS ONE EXCEPTION: if a torrent has no peers
 		end
 		puts "Memcached writes took #{Time.now.to_f - t} seconds."
 	end

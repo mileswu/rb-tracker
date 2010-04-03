@@ -43,7 +43,7 @@ class Benchmarker
 
       hash[:uploaded] = rand(100000000)
       hash[:downloaded] = rand(100000000)
-      hash[:event] = ["started", "stopped", "completed"][rand(3)]
+      hash[:event] = ["started", "stopped", "completed"][0]
       hash[:left] = rand(100000000)
 
       return hash
@@ -65,7 +65,7 @@ class Benchmarker
       @files = hashes
 
       users = []
-      @db.query("SELECT ID FROM users_main").each_hash do |h|
+      @db.query("SELECT ID, torrent_pass FROM users_main").each_hash do |h|
          users.push(nil)
       end
       @clients = users.map { generate_random_client() }
@@ -73,7 +73,7 @@ class Benchmarker
       @no_files = @files.size()
       @no_clients = @clients.size()
 
-      puts " done!\n"
+      #puts " done!\n"
    end
 
    def make_request()
@@ -81,27 +81,30 @@ class Benchmarker
       client = @clients[rand(@no_clients)]
       status = generate_random_status()
 
-      str = "/announce?" + file.merge(client).merge(status).to_url_params() + " HTTP/1.1"
+      str = "/bl0kp8070f3hzxto49t2u5v7s5euim83/announce?" + file.merge(client).merge(status).to_url_params()
 
-      t0 = Time.now()
-      response = Net::HTTP::get("0.0.0.0", str, "6969")
-      t1 = Time.now()
+      #t0 = Time.now()
+      response = Net::HTTP::get("0.0.0.0", str, "3000")
+      #t1 = Time.now()
 
-      print "Called:\n\t"
-      puts str
-      print "Received:\n\t"
-      p response
-      puts "in #{t1 - t0} seconds\n"
+      #print "Called:\n\t"
+      #puts str
+      #print "Received:\n\t"
+      #p response
+      #puts "in #{t1 - t0} seconds\n"
 
       return nil
    end
 
    def go()
-      while true
+      10000.times do |i|
+	puts i if(i%500 == 0)
          make_request()
       end
    end
 end
 
 benchmarker = Benchmarker.new()
-benchmarker.go()
+
+require 'benchmark'
+puts Benchmark.measure { benchmarker.go() }

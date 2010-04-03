@@ -50,9 +50,9 @@ class Tracker
 
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
-		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }@
-		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
+		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
+		#sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }@
+		#sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 	end
 	
 	def call(env)
@@ -255,7 +255,7 @@ class Tracker
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0})
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => get_vars['uploaded'], :downloaded => get_vars['downloaded']})
 			end
 		end
 		peer[:modified] = true
@@ -302,7 +302,7 @@ class Tracker
 		end
 
 		resp.write(output.bencode)
-		puts resp.inspect
+		#puts resp.inspect
 		return resp.finish
 	end
 

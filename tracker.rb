@@ -46,6 +46,8 @@ class Tracker
 
 		@mutex = Mutex.new
 
+		@last_db_write = Time.now.to_i
+
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
 		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
@@ -172,6 +174,10 @@ class Tracker
 	end
 
 	def write_db
+		# Record last time that we did a writ
+		diff = Time.now - @last_db_write
+		@last_db_write = Time.now.to_i
+
 		t = Time.now.to_f
 		#Update users stats first
 		query = "INSERT INTO users_main (ID, Uploaded, Downloaded) VALUES\n"
@@ -192,7 +198,9 @@ class Tracker
 		@torrents.each_value do |i|
 			i[:peers].each do |p|
 				next if p[:modified] == false
-				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '1', '"
+				time_since_start = @last_db_write - p[:start_time]
+				time = (diff < time_since_start) ? diff : time_since_start
+				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{time}')\n"
 			end
 		end
 		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime)"
@@ -299,7 +307,7 @@ class Tracker
 	end
 
 	def snatched_completed(tid, uid)
-		@db.query("INSERT INTO xbt_snatched (uid, tstamp, fid) VALUES('#{uid}', '#{Time.now.to_i}', '#{tid}')")
+		#@db.query("INSERT INTO xbt_snatched (uid, tstamp, fid) VALUES('#{uid}', '#{Time.now.to_i}', '#{tid}')")
 	end
 end
 

@@ -4,6 +4,7 @@ require 'json'
 require 'mysql'
 require 'memcached'
 require 'config'
+require 'base64'
 
 class String
 	def to_hex
@@ -12,50 +13,99 @@ class String
 end
 
 module TrackerHelper
+	def sleep_loop(time, first=false, &block)
+		if(first)
+			t = Thread.new do
+				while 1
+					yield
+					sleep time
+				end
+			end
+			return t
+		else
+			t = Thread.new do
+				while 1
+					sleep time
+					yield
+				end
+			end
+			return t
+		end
+	end
 end
 
 class Tracker
 	include TrackerHelper
 
 	def initialize
+		Thread.abort_on_exception = true
+
 		@db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 		@db.reconnect = true
-		@@cache = Memcached.new("localhost:11211")
+		@cache = Memcached.new("localhost:11211")
 
+		@mutex = Mutex.new
 
-
-		@users = {}
-		@torrents = {}
-		read_users
-		read_users
-		read_torrents
-		read_torrents
+		read_marshal
+		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
+		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
+		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
 	end
 	
 	def call(env)
-		req = Rack::Request.new(env)
-		path = req.path
-		if(path[-9..-1] == '/announce') # format is /<passkey>/announce
-			return announce(req)
-		elsif(path == '/debug')
-			time = Time.now.to_f
-			body = ""
-			for i in @users
-				body << i.inspect + "\n"
-			end
-			body << "\n----------\n"
-			for i in @torrents
-				body << i.inspect + "\n"
-			end
-			puts "Debug generation took #{Time.now.to_f - time} seconds"
+		@mutex.synchronize do
+			req = Rack::Request.new(env)
+			path = req.path
+			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
+				return announce(req)
+			elsif(path == '/debug')
+				time = Time.now.to_f
+				body = ""
+				for i in @users
+					body << i.inspect + "\n"
+				end
+				body << "\n----------\n"
+				for i in @torrents
+					body << i.inspect + "\n"
+				end
+				puts "Debug generation took #{Time.now.to_f - time} seconds"
 
-			return [200, {'Content-Type' => 'text/plain'}, body]
-		else
-			return [200, {'Content-Type' => 'text/plain'}, "WTF are you trying to do"]
+				return [200, {'Content-Type' => 'text/plain'}, body]
+			else
+				return [200, {'Content-Type' => 'text/plain'}, "WTF are you trying to do"]
+			end
 		end
 	end
 
 	private
+
+	def read_marshal
+		puts "Opening resume file"
+		begin 
+			f = File.open("resume-state.db", "r")
+			resume = Marshal.load(f.read)
+			@users = resume[:users]
+			@torrents = resume[:torrents]
+			puts "Success"
+		rescue
+			@users = {}
+			@torrents = {}
+			puts "None found"
+		end
+	end
+
+	def write_marshal
+		t = Time.now.to_f
+		f = File.open("resume-state.db", "w")
+		f.write(Marshal.dump({:users => @users, :torrents=> @torrents}))
+		f.close
+		puts "Marshal generation took #{Time.now.to_f - t} seconds"
+	end
+
+	def read_db
+		read_users
+		read_torrents
+	end
 
 	def read_users
 		t = Time.now.to_f
@@ -80,7 +130,7 @@ class Tracker
 	
 	def read_torrents
 		t = Time.now.to_f
-		results = @db.query("SELECT ID, info_hash FROM torrents")
+		results = @db.query("SELECT ID, info_hash, FreeTorrent FROM torrents")
 
 		puts "--Torrent_query: #{Time.now.to_f - t} seconds"
 		infohashes = []
@@ -88,12 +138,36 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => [], :id => i["ID"], :marked => true }
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1')}
+			else
+				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
 			end
 		end
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
 		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }
 		puts "Fetching torrents took #{Time.now.to_f - t} seconds. #{@torrents.length} active torrents"
+	end
+
+	def write_memcached
+		t = Time.now.to_f
+		@torrents.each_value do |i|
+			if i[:modified] == false # no point updating stuff when it's not changed 
+				next
+			end
+			i[:modified] = false
+
+			key = MEMCACHED_PREFIX + "tracker_torrents_" + i[:id]
+			data = i[:peers]
+
+			data.each_pair do |k, h| #Peer ids are binary
+				data[Base64.b64encode(k)] = h
+				data.delete(k)
+			end
+			data = JSON.generate(data)
+
+			@cache.set key, data, ANNOUNCE_INTERVAL*2 #To avoid edge issues with time. Since a torrent *must* have new info every announce, this ensures that the data will never expire out of memcache
+		end
+		puts "Memcached writes took #{Time.now.to_f - t} seconds."
 	end
 
 	def announce(req)
@@ -129,11 +203,10 @@ class Tracker
 		info_hash = get_vars['info_hash']
 		torrent = @torrents[info_hash]
 		if torrent.nil?
-			#resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
-			#return resp.finish
-			@torrents[info_hash] = {:peers => {}}
-			torrent = @torrents[info_hash]
+			resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
+			return resp.finish
 		end
+		torrent[:modified] = true # flags it for the memcache route
 
 		peer_id = get_vars['peer_id']
 		event = get_vars['event']
@@ -142,7 +215,7 @@ class Tracker
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:completed => false})
+				peer = (peers[peer_id] = {:completed => false, :start_time => Time.now.to_i})
 			end
 		end
 
@@ -153,11 +226,14 @@ class Tracker
 			peer[:port] = get_vars['port']
 			peer[:compact] = IPAddr.new(peer[:ip]).hton + [peer[:port]].pack('n') #Store this for speed
 			
+			peer[:last_announce] = Time.now.to_i
+
 			peer[:uploaded] = get_vars['uploaded']
 			peer[:downloaded] = get_vars['downloaded']
 			peer[:left] = get_vars['left']
 			peer[:completed] = (peer[:left] == 0 ? true : false)
 			if event == 'completed' #increment snatch
+				snatched_completed(torrent[:id], @users[passkey][:id])
 			end
 		end
 		
@@ -180,6 +256,10 @@ class Tracker
 		resp.write(output.bencode)
 		puts resp.inspect
 		return resp.finish
-  end
+	end
+
+	def snatched_completed(tid, uid)
+		@db.query("INSERT INTO xbt_snatched (uid, tstamp, fid) VALUES('#{uid}', '#{Time.now.to_i}', '#{tid}')")
+	end
 end
 

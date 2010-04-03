@@ -6,9 +6,9 @@ require 'rack/reloader'
 require 'tracker'
 
 app = Rack::Builder.new do
-#	use Rack::ShowExceptions
+	use Rack::ShowExceptions
 #	use Rack::Reloader, 0
-#	use Rack::Lint
+	use Rack::Lint
 	run Tracker.new
 end
 

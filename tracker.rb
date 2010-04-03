@@ -35,6 +35,7 @@ class Tracker
 		@torrents = {}
 
 		read_db
+		wrtie_memcache
 		sleep_loop(30) { read_db }
 	end
 	
@@ -64,7 +65,9 @@ class Tracker
 	private
 
 	def write_memcache
-
+		t = Time.now.to_f
+		puts(JSON.generate(@torrents).length)
+		puts "Memcache generation took #{Time.now.to_f - t} seconds"
 	end
 
 	def read_db
@@ -106,6 +109,7 @@ class Tracker
 				@torrents[ih] = { :peers => {}, :id => i["ID"], :marked => true, :free => (i["FreeTorrent"] == '1')}
 			else
 				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
+			end
 		end
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
 		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }

@@ -34,6 +34,16 @@ module TrackerHelper
 			return t
 		end
 	end
+
+
+	def simple_response(str)
+		[200, {"Content-Encoding" => "text/plain"}, str]
+	end
+
+	def hton_ip(str)
+		Socket.gethostbyname(str)[3]
+	end
+
 end
 
 class Tracker
@@ -210,10 +220,6 @@ class Tracker
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 	end
 
-	def simple_response(str)
-		[200, {"Content-Encoding" => "text/plain"}, str]
-	end
-
 
 	def announce(env)
 		
@@ -311,7 +317,7 @@ class Tracker
 		else # Update the IP Address/Port
 			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env['REMOTE_ADDR']
 			peer[:port] = get_vars['port']
-			peer[:compact] = IPAddr.new(peer[:ip]).hton + [peer[:port]].pack('n') #Store this for speed
+			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
 			
 			peer[:last_announce] = Time.now.to_i
 
@@ -348,7 +354,6 @@ class Tracker
 		end
 
 		return simple_response(output.bencode)
-		#puts resp.inspect
 	end
 
 	def snatched_completed(tid, uid)

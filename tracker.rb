@@ -317,7 +317,7 @@ class Tracker
 				raise "#{i} was invalid. Dump: #{get_vars.inspect}"
 			end
 		end
-		['port', 'uploaded', 'downloaded', 'left'].map do |i|
+		['port', 'uploaded', 'downloaded', 'left'].each do |i|
 			begin
 				get_vars[i] = Integer(get_vars[i])
 			rescue ArgumentError

@@ -7,6 +7,7 @@ require 'config'
 require 'base64'
 require 'cgi'
 
+
 class String
 	def to_hex
 		return self.unpack("H*")
@@ -209,17 +210,18 @@ class Tracker
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 	end
 
+	def simple_response(str)
+		[200, {"Content-Encoding" => "text/plain"}, str]
+	end
+
 
 	def announce(env)
-		resp = Rack::Response.new("", 200, {'Content-Type' => 'text/plain'})
 		
 		passkey = 'bl0kp8070f3hzxto49t2u5v7s5euim83'
 		if passkey == ''
-			resp.write({'failure reason' => 'This is private. You need a passkey'}.bencode)
-			return resp.finish
+			return simple_response({'failure reason' => 'This is private. You need a passkey'}.bencode)
 		elsif (user = @users[passkey]).nil?
-			resp.write({'failure reason' => 'Your passkey is invalid'}.bencode)
-			return resp.finish
+			return simple_response({'failure reason' => 'Your passkey is invalid'}.bencode)
 		end
 
 		get_vars = {}
@@ -248,7 +250,7 @@ class Tracker
 =end
 
 		for i in env['QUERY_STRING'].split("&")
-			s = i.split("=")
+			s = i.split("=", 2)
 			get_vars[s[0]] = s[1]
 =begin
 			puts i
@@ -345,9 +347,8 @@ class Tracker
 			output['peers'] =  peers.map { |peer_id, a| { 'peer id' => peer_id, 'ip' => a[:ip], 'port' => a[:port] } }
 		end
 
-		resp.write(output.bencode)
+		return simple_response(output.bencode)
 		#puts resp.inspect
-		return resp.finish
 	end
 
 	def snatched_completed(tid, uid)

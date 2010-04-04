@@ -312,27 +312,31 @@ class Tracker
 		#   info_hash, peer_id, port, uploaded, downloaded, left,    <-- REQUIRED
 		#   compact, no_peer_id, event, ip, numwant, key, trackerid  <--- optional
 		
-		['info_hash', 'peer_id', 'port', 'uploaded', 'downloaded', 'left'].each do |i|
-			if get_vars[i].nil? or get_vars[i] == ''
-				raise "#{i} was invalid. Dump: #{get_vars.inspect}"
-			end
-		end
-		['port', 'uploaded', 'downloaded', 'left'].each do |i|
-			begin
-				get_vars[i] = Integer(get_vars[i])
-			rescue ArgumentError
-				raise "#{i} was invalid. Dump: #{get_vars.inspect}"
-			end
-		end
 
 		info_hash = get_vars['info_hash']
+		peer_id = get_vars['peer_id']
+		port = get_vars['port']
+		uploaded = get_vars['uploaded']
+		downloaded = get_vars['downloaded']
+		left = get_vars['left']
+		if info_hash.nil? or info_hash == '' or peer_id.nil? or peer_id == '' or port.nil? or port == '' or uploaded.nil? or uploaded == '' or downloaded.nil? or downloaded == '' or left.nil? or left == ''
+			raise "DSDF"
+		end
+		begin
+			port = Integer(port)
+			uploaded = Integer(uploaded)
+			downloaded = Integer(downloaded)
+			left = Integer(left)
+		rescue ArgumentError
+			raise "fdsi"
+		end
+
 		torrent = @torrents[info_hash]
 		if torrent.nil?
 			return simple_response({'failure reason' => 'This torrent does not exist'}.bencode)
 		end
 		torrent[:modified] = true # flags it for the memcache route
 
-		peer_id = get_vars['peer_id']
 		event = get_vars['event']
 		peers = torrent[:peers]
 		if (peer = peers[peer_id]).nil? # New peer
@@ -348,13 +352,13 @@ class Tracker
 			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
 			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env['REMOTE_ADDR']
-			peer[:port] = get_vars['port']
+			peer[:port] = port
 			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
 			
 			peer[:last_announce] = Time.now.to_i
 
-			peer[:delta_up] += peer[:uploaded] - get_vars['uploaded']
-			peer[:delta_down] += peer[:downloaded] - get_vars['downloaded']
+			peer[:delta_up] += peer[:uploaded] - uploaded
+			peer[:delta_down] += peer[:downloaded] - downloaded
 
 			user[:delta_up] += peer[:delta_up] # Update users stats
 			user[:delta_down] += peer[:delta_down]
@@ -362,8 +366,8 @@ class Tracker
 			peer[:uploaded] = get_vars['uploaded'] # Update transfer_history
 			peer[:downloaded] = get_vars['downloaded']
 
-			peer[:left] = get_vars['left']
-			peer[:completed] = (peer[:left] == 0 ? true : false)
+			peer[:left] = left
+			peer[:completed] = (left == 0 ? true : false)
 			if event == 'completed' #increment snatch
 				snatched_completed(torrent[:id], user[:id])
 			end

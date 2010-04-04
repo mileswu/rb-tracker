@@ -225,6 +225,45 @@ class Tracker
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 	end
 
+	require 'inline'
+	inline do |builder|
+		builder.c '_
+			VALUE parse_get_vars(char *str, int len) {
+				int i=0, flag = 0;
+				char key[300], data[300];
+				int key_i = 0, data_i = 0;
+				VALUE rb_hash = rb_hash_new();
+
+				for(i=0; i<len; i++) {
+					if(str[i] == 38) {
+						key[i] = 0; data[i] = 0;
+						rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
+						key_i = 0; data_i = 0;
+						flag = 0;
+					}
+					else if(str[i] == 61) {
+						flag = 1;
+					}
+					else {
+						if(flag == 1) {
+							data[data_i] = str[i];
+							data_i++;
+						}
+						else {
+							key[key_i] = str[i];
+							key_i++;
+						}
+
+					}
+				}
+				rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
+				return(rb_hash);
+
+			}
+
+		'
+	end
+
 
 	def announce(env)
 		
@@ -237,45 +276,7 @@ class Tracker
 
 		get_vars = {}
 
-=begin
-		key = ""
-		data = ""
-		flag = false
-		env['QUERY_STRING'].each_byte do |i|
-			if i == 38 # &
-				get_vars[key] = data
-				key = ""
-				data = ""
-				flag = false
-			elsif i == 61 # =
-				flag = true
-			else
-				if flag
-					data << i
-				else
-					key << i
-				end
-			end
-		end
-		get_vars[key] = data
-=end
-
-		for i in env['QUERY_STRING'].split("&")
-			s = i.split("=", 2)
-			get_vars[s[0]] = s[1]
-=begin
-			puts i
-			split_pos = 0
-			i.each_with_index do |j, pos|
-				puts j[pos]
-				if j[pos] == 61 #ASCII for '='
-					#split_pos = pos
-					break
-				end
-			end
-			get_vars[i[0..split_pos-1]] = i[split_pos..-1]
-=end
-		end
+		get_vars = parse_get_vars(env['QUERY_STRING'], env['QUERY_STRING'].length)
 		
 		get_vars['info_hash'] = quick_cgi_unescape(get_vars['info_hash'])
 		get_vars['peer_id'] = quick_cgi_unescape(get_vars['peer_id'])

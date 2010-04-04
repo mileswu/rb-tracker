@@ -5,6 +5,7 @@ require 'mysql'
 require 'memcached'
 require 'config'
 require 'base64'
+require 'inline'
 
 
 class String
@@ -43,11 +44,38 @@ module TrackerHelper
 		Socket.gethostbyname(str)[3]
 	end
 
-	def quick_cgi_unescape(str) #This is precisely the same atm, but we can optimise
-		a = str.gsub(/((?:%[^%]{2})+)/n) do
-			[$1.delete("%")].pack('H*')
+	inline do |builder|
+	builder.c '
+		VALUE quick_cgi_unescape(char * str, int length) {
+			int i=0, j=0, temp2;
+			char out[300], temp[2];
+			for(i=0; i<length; i++) {
+				if(str[i] == 37) {
+					temp[0] = str[i+1];
+					temp[1] = str[i+2];
+					i += 2;
+					sscanf(temp, "%x", &temp2);
+					out[j] = temp2;
+					j++;
+				}
+				else {
+					out[j] = str[i];
+					j++;
+				}
+
+			}
+			return(rb_str_new(out, j));
+		}
+
+
+	'
+
 		end
-	end
+	#def quick_cgi_unescape(str) #This is precisely the same atm, but we can optimise
+#		a = str.gsub(/((?:%[^%]{2})+)/n) do
+#			[$1.delete("%")].pack('H*')
+#		end
+#	end
 
 end
 
@@ -225,7 +253,6 @@ class Tracker
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 	end
 
-	require 'inline'
 	inline do |builder|
 		builder.c '_
 			VALUE parse_get_vars(char *str, int len) {
@@ -278,8 +305,8 @@ class Tracker
 
 		get_vars = parse_get_vars(env['QUERY_STRING'], env['QUERY_STRING'].length)
 		
-		get_vars['info_hash'] = quick_cgi_unescape(get_vars['info_hash'])
-		get_vars['peer_id'] = quick_cgi_unescape(get_vars['peer_id'])
+		get_vars['info_hash'] = quick_cgi_unescape(get_vars['info_hash'],get_vars['info_hash'].length)
+		get_vars['peer_id'] = quick_cgi_unescape(get_vars['peer_id'],get_vars['peer_id'].length)
 		
 		# GET requests of interest are:
 		#   info_hash, peer_id, port, uploaded, downloaded, left,    <-- REQUIRED

@@ -330,7 +330,6 @@ class Tracker
 		rescue ArgumentError
 			raise "fdsi"
 		end
-		puts port.class
 
 		torrent = @torrents[info_hash]
 		if torrent.nil?
@@ -352,7 +351,7 @@ class Tracker
 		if event == 'stopped' or event == 'paused'
 			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
-			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env['REMOTE_ADDR']
+			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env[IPADDRKEY] 
 			peer[:port] = port
 			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
 			

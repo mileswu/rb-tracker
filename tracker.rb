@@ -5,7 +5,6 @@ require 'mysql'
 require 'memcached'
 require 'config'
 require 'base64'
-require 'cgi'
 
 
 class String
@@ -42,6 +41,12 @@ module TrackerHelper
 
 	def hton_ip(str)
 		Socket.gethostbyname(str)[3]
+	end
+
+	def quick_cgi_unescape(str) #This is precisely the same atm, but we can optimise
+		a = str.gsub(/((?:%[^%]{2})+)/n) do
+			[$1.delete("%")].pack('H*')
+		end
 	end
 
 end
@@ -272,8 +277,8 @@ class Tracker
 =end
 		end
 		
-		get_vars['info_hash'] = CGI::unescape(get_vars['info_hash'])
-		get_vars['peer_id'] = CGI::unescape(get_vars['peer_id'])
+		get_vars['info_hash'] = quick_cgi_unescape(get_vars['info_hash'])
+		get_vars['peer_id'] = quick_cgi_unescape(get_vars['peer_id'])
 		
 		# GET requests of interest are:
 		#   info_hash, peer_id, port, uploaded, downloaded, left,    <-- REQUIRED
@@ -295,8 +300,7 @@ class Tracker
 		info_hash = get_vars['info_hash']
 		torrent = @torrents[info_hash]
 		if torrent.nil?
-			resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
-			return resp.finish
+			return simple_response({'failure reason' => 'This torrent does not exist'}.bencode)
 		end
 		torrent[:modified] = true # flags it for the memcache route
 

@@ -5,6 +5,7 @@ require 'mysql'
 require 'memcached'
 require 'config'
 require 'base64'
+require 'cgi'
 
 class String
 	def to_hex
@@ -57,10 +58,9 @@ class Tracker
 	
 	def call(env)
 		@mutex.synchronize do
-			req = Rack::Request.new(env)
-			path = req.path
+			path = env['PATH_INFO']
 			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
-				return announce(req)
+				return announce(env)
 			elsif(path == '/debug')
 				time = Time.now.to_f
 				body = ""
@@ -210,10 +210,10 @@ class Tracker
 	end
 
 
-	def announce(req)
+	def announce(env)
 		resp = Rack::Response.new("", 200, {'Content-Type' => 'text/plain'})
 		
-		passkey = req.path[1..-10]
+		passkey = 'bl0kp8070f3hzxto49t2u5v7s5euim83'
 		if passkey == ''
 			resp.write({'failure reason' => 'This is private. You need a passkey'}.bencode)
 			return resp.finish
@@ -222,7 +222,51 @@ class Tracker
 			return resp.finish
 		end
 
-		get_vars = req.GET()
+		get_vars = {}
+
+=begin
+		key = ""
+		data = ""
+		flag = false
+		env['QUERY_STRING'].each_byte do |i|
+			if i == 38 # &
+				get_vars[key] = data
+				key = ""
+				data = ""
+				flag = false
+			elsif i == 61 # =
+				flag = true
+			else
+				if flag
+					data << i
+				else
+					key << i
+				end
+			end
+		end
+		get_vars[key] = data
+=end
+
+		for i in env['QUERY_STRING'].split("&")
+			s = i.split("=")
+			get_vars[s[0]] = s[1]
+=begin
+			puts i
+			split_pos = 0
+			i.each_with_index do |j, pos|
+				puts j[pos]
+				if j[pos] == 61 #ASCII for '='
+					#split_pos = pos
+					break
+				end
+			end
+			get_vars[i[0..split_pos-1]] = i[split_pos..-1]
+=end
+		end
+		
+		get_vars['info_hash'] = CGI::unescape(get_vars['info_hash'])
+		get_vars['peer_id'] = CGI::unescape(get_vars['peer_id'])
+		
 		# GET requests of interest are:
 		#   info_hash, peer_id, port, uploaded, downloaded, left,    <-- REQUIRED
 		#   compact, no_peer_id, event, ip, numwant, key, trackerid  <--- optional
@@ -263,7 +307,7 @@ class Tracker
 		if event == 'stopped' or event == 'paused'
 			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
-			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : req.env['REMOTE_ADDR']
+			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env['REMOTE_ADDR']
 			peer[:port] = get_vars['port']
 			peer[:compact] = IPAddr.new(peer[:ip]).hton + [peer[:port]].pack('n') #Store this for speed
 			

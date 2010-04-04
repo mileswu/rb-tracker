@@ -330,6 +330,7 @@ class Tracker
 		rescue ArgumentError
 			raise "fdsi"
 		end
+		puts port.class
 
 		torrent = @torrents[info_hash]
 		if torrent.nil?
@@ -363,8 +364,8 @@ class Tracker
 			user[:delta_up] += peer[:delta_up] # Update users stats
 			user[:delta_down] += peer[:delta_down]
 
-			peer[:uploaded] = get_vars['uploaded'] # Update transfer_history
-			peer[:downloaded] = get_vars['downloaded']
+			peer[:uploaded] = uploaded # Update transfer_history
+			peer[:downloaded] = downloaded
 
 			peer[:left] = left
 			peer[:completed] = (left == 0 ? true : false)

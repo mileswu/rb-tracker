@@ -343,7 +343,7 @@ class Tracker
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => get_vars['uploaded'], :downloaded => get_vars['downloaded']})
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded})
 			end
 		end
 		peer[:modified] = true

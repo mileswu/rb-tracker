@@ -5,6 +5,8 @@ require 'mysql'
 require 'memcached'
 require 'config'
 require 'base64'
+require 'inline'
+
 
 class String
 	def to_hex
@@ -32,6 +34,49 @@ module TrackerHelper
 			return t
 		end
 	end
+
+
+	def simple_response(str)
+		[200, {"Content-Encoding" => "text/plain"}, str]
+	end
+
+	def hton_ip(str)
+		Socket.gethostbyname(str)[3]
+	end
+
+	inline do |builder|
+	builder.c '
+		VALUE quick_cgi_unescape(char * str, int length) {
+			int i=0, j=0, temp2;
+			char out[300], temp[2];
+			for(i=0; i<length; i++) {
+				if(str[i] == 37) {
+					temp[0] = str[i+1];
+					temp[1] = str[i+2];
+					i += 2;
+					sscanf(temp, "%x", &temp2);
+					out[j] = temp2;
+					j++;
+				}
+				else {
+					out[j] = str[i];
+					j++;
+				}
+
+			}
+			return(rb_str_new(out, j));
+		}
+
+
+	'
+
+		end
+	#def quick_cgi_unescape(str) #This is precisely the same atm, but we can optimise
+#		a = str.gsub(/((?:%[^%]{2})+)/n) do
+#			[$1.delete("%")].pack('H*')
+#		end
+#	end
+
 end
 
 class Tracker
@@ -50,17 +95,16 @@ class Tracker
 
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
-		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }@
-		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
+		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
+		#sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }@
+		#sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 	end
 	
 	def call(env)
 		@mutex.synchronize do
-			req = Rack::Request.new(env)
-			path = req.path
+			path = env['PATH_INFO']
 			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
-				return announce(req)
+				return announce(env)
 			elsif(path == '/debug')
 				time = Time.now.to_f
 				body = ""
@@ -209,53 +253,97 @@ class Tracker
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 	end
 
+	inline do |builder|
+		builder.c '_
+			VALUE parse_get_vars(char *str, int len) {
+				int i=0, flag = 0;
+				char key[300], data[300];
+				int key_i = 0, data_i = 0;
+				VALUE rb_hash = rb_hash_new();
 
-	def announce(req)
-		resp = Rack::Response.new("", 200, {'Content-Type' => 'text/plain'})
+				for(i=0; i<len; i++) {
+					if(str[i] == 38) {
+						key[i] = 0; data[i] = 0;
+						rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
+						key_i = 0; data_i = 0;
+						flag = 0;
+					}
+					else if(str[i] == 61) {
+						flag = 1;
+					}
+					else {
+						if(flag == 1) {
+							data[data_i] = str[i];
+							data_i++;
+						}
+						else {
+							key[key_i] = str[i];
+							key_i++;
+						}
+
+					}
+				}
+				rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
+				return(rb_hash);
+
+			}
+
+		'
+	end
+
+
+	def announce(env)
 		
-		passkey = req.path[1..-10]
+		passkey = 'bl0kp8070f3hzxto49t2u5v7s5euim83'
 		if passkey == ''
-			resp.write({'failure reason' => 'This is private. You need a passkey'}.bencode)
-			return resp.finish
+			return simple_response({'failure reason' => 'This is private. You need a passkey'}.bencode)
 		elsif (user = @users[passkey]).nil?
-			resp.write({'failure reason' => 'Your passkey is invalid'}.bencode)
-			return resp.finish
+			return simple_response({'failure reason' => 'Your passkey is invalid'}.bencode)
 		end
 
-		get_vars = req.GET()
+		get_vars = {}
+
+		get_vars = parse_get_vars(env['QUERY_STRING'], env['QUERY_STRING'].length)
+		
+		get_vars['info_hash'] = quick_cgi_unescape(get_vars['info_hash'],get_vars['info_hash'].length)
+		get_vars['peer_id'] = quick_cgi_unescape(get_vars['peer_id'],get_vars['peer_id'].length)
+		
 		# GET requests of interest are:
 		#   info_hash, peer_id, port, uploaded, downloaded, left,    <-- REQUIRED
 		#   compact, no_peer_id, event, ip, numwant, key, trackerid  <--- optional
 		
-		['info_hash', 'peer_id', 'port', 'uploaded', 'downloaded', 'left'].each do |i|
-			if get_vars[i].nil? or get_vars[i] == ''
-				raise "#{i} was invalid. Dump: #{get_vars.inspect}"
-			end
-		end
-		['port', 'uploaded', 'downloaded', 'left'].map do |i|
-			begin
-				get_vars[i] = Integer(get_vars[i])
-			rescue ArgumentError
-				raise "#{i} was invalid. Dump: #{get_vars.inspect}"
-			end
-		end
 
 		info_hash = get_vars['info_hash']
+		peer_id = get_vars['peer_id']
+		port = get_vars['port']
+		uploaded = get_vars['uploaded']
+		downloaded = get_vars['downloaded']
+		left = get_vars['left']
+		if info_hash.nil? or info_hash == '' or peer_id.nil? or peer_id == '' or port.nil? or port == '' or uploaded.nil? or uploaded == '' or downloaded.nil? or downloaded == '' or left.nil? or left == ''
+			raise "DSDF"
+		end
+		begin
+			port = Integer(port)
+			uploaded = Integer(uploaded)
+			downloaded = Integer(downloaded)
+			left = Integer(left)
+		rescue ArgumentError
+			raise "fdsi"
+		end
+
 		torrent = @torrents[info_hash]
 		if torrent.nil?
-			resp.write({'failure reason' => 'This torrent does not exist'}.bencode)
-			return resp.finish
+			return simple_response({'failure reason' => 'This torrent does not exist'}.bencode)
 		end
 		torrent[:modified] = true # flags it for the memcache route
 
-		peer_id = get_vars['peer_id']
 		event = get_vars['event']
 		peers = torrent[:peers]
 		if (peer = peers[peer_id]).nil? # New peer
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0})
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => get_vars['uploaded'], :downloaded => get_vars['downloaded']})
 			end
 		end
 		peer[:modified] = true
@@ -263,14 +351,14 @@ class Tracker
 		if event == 'stopped' or event == 'paused'
 			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
-			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : req.env['REMOTE_ADDR']
-			peer[:port] = get_vars['port']
-			peer[:compact] = IPAddr.new(peer[:ip]).hton + [peer[:port]].pack('n') #Store this for speed
+			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env['REMOTE_ADDR']
+			peer[:port] = port
+			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
 			
 			peer[:last_announce] = Time.now.to_i
 
-			peer[:delta_up] += peer[:uploaded] - get_vars['uploaded']
-			peer[:delta_down] += peer[:downloaded] - get_vars['downloaded']
+			peer[:delta_up] += peer[:uploaded] - uploaded
+			peer[:delta_down] += peer[:downloaded] - downloaded
 
 			user[:delta_up] += peer[:delta_up] # Update users stats
 			user[:delta_down] += peer[:delta_down]
@@ -278,8 +366,8 @@ class Tracker
 			peer[:uploaded] = get_vars['uploaded'] # Update transfer_history
 			peer[:downloaded] = get_vars['downloaded']
 
-			peer[:left] = get_vars['left']
-			peer[:completed] = (peer[:left] == 0 ? true : false)
+			peer[:left] = left
+			peer[:completed] = (left == 0 ? true : false)
 			if event == 'completed' #increment snatch
 				snatched_completed(torrent[:id], user[:id])
 			end
@@ -301,9 +389,7 @@ class Tracker
 			output['peers'] =  peers.map { |peer_id, a| { 'peer id' => peer_id, 'ip' => a[:ip], 'port' => a[:port] } }
 		end
 
-		resp.write(output.bencode)
-		puts resp.inspect
-		return resp.finish
+		return simple_response(output.bencode)
 	end
 
 	def snatched_completed(tid, uid)

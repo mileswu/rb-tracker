@@ -133,6 +133,7 @@ class Tracker
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
 		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
+		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
 	end
 	
 	def call(env)
@@ -256,6 +257,26 @@ class Tracker
 		puts "Memcached writes took #{Time.now.to_f - t} seconds."
 	end
 
+	def clean_up
+		t = Time.now.to_f
+		counter = 0
+		@torrents.each_value do |i|
+			i[:peers].each_pair do |k,p|
+				if((t - p[:last_announce]) > 2*ANNOUNCE_INTERVAL) # 2 for leniency
+					counter += 1
+					query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0')\n"
+					i[:peers].delete(k)
+				end
+			end
+		end
+		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
+		if counter > 0
+			puts query
+			@db.query(query)
+		end
+		puts "Updating cleaning stats took #{Time.now.to_f - t} seconds."
+	end
+
 	def write_db
 		t = Time.now.to_f
 		#Update users stats first
@@ -281,7 +302,7 @@ class Tracker
 		puts "Updating user stats took #{Time.now.to_f - t} seconds."
 
 		t = Time.now.to_f
-		#Update transfer_history
+		#Update transfer_history - there aer 
 		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active) VALUES\n"
 		counter = 0
 		@torrents.each_value do |i|
@@ -394,7 +415,7 @@ class Tracker
 		#   min interval, tracker id, warning message        <--- optional
 
 		no_complete = peers.select { |peer_id, a| a[:completed] }.count
-		output = { 'interval' => 60,
+		output = { 'interval' => ANNOUNCE_INTERVAL,
 					  'complete' => no_complete,
 					  'incomplete' => peers.count - no_complete
 		}

@@ -131,7 +131,7 @@ class Tracker
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
+		#sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
 	end
@@ -260,17 +260,17 @@ class Tracker
 	def clean_up
 		t = Time.now.to_f
 		counter = 0
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active) VALUES\n"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
 		@torrents.each_value do |i|
 			i[:peers].each_pair do |k,p|
 				if((t - p[:last_announce]) > 2*ANNOUNCE_INTERVAL) # 2 for leniency
 					counter += 1
-					query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0')\n"
+					query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch}')\n"
 					i[:peers].delete(k)
 				end
 			end
 		end
-		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active)"
+		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
 		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
@@ -305,20 +305,21 @@ class Tracker
 
 		t = Time.now.to_f
 		#Update transfer_history - there aer 
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active) VALUES\n"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
 		counter = 0
 		@torrents.each_value do |i|
 			i[:peers].each_value do |p|
-				next if p[:delta_up] == 0 and p[:delta_down] == 0 and p[:delta_time] == 0 and p[:force_update] != true
+				next if p[:delta_up] == 0 and p[:delta_down] == 0 and p[:delta_time] == 0 and p[:force_update] != true and p[:delta_snatch] == 0
 				counter += 1
-				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1')\n"
+				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch}')\n"
 				p[:delta_up] = 0
 				p[:delta_down] = 0
 				p[:delta_time] = 0
+				p[:delta_snatch] = 0
 				p[:force_update] = false
 			end
 		end
-		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active)"
+		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
@@ -380,12 +381,13 @@ class Tracker
 			#if event != 'started'
 			#	raise "You must start first"
 			#else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => t, :delta_time => 0, :last_announce => t, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded, :force_update => true})
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => t, :delta_time => 0, :last_announce => t, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded, :force_update => true, :delta_snatch => 0})
 			#end
 		end
 
 		if event == 'stopped' or event == 'paused'
-			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
+			return simple_response("Come again...") #ignore it
+			#peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
 			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env[IPADDRKEY] 
 			peer[:port] = port
@@ -408,7 +410,7 @@ class Tracker
 			peer[:left] = left
 			peer[:completed] = (left == 0 ? true : false)
 			if event == 'completed' #increment snatch
-				snatched_completed(torrent[:id], user[:id])
+				peer[:delta_snatch] += 1
 			end
 		end
 		

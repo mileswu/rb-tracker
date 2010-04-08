@@ -260,6 +260,7 @@ class Tracker
 	def clean_up
 		t = Time.now.to_f
 		counter = 0
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active) VALUES\n"
 		@torrents.each_value do |i|
 			i[:peers].each_pair do |k,p|
 				if((t - p[:last_announce]) > 2*ANNOUNCE_INTERVAL) # 2 for leniency
@@ -269,6 +270,7 @@ class Tracker
 				end
 			end
 		end
+		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active)"
 		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query

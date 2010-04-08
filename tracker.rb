@@ -77,6 +77,43 @@ module TrackerHelper
 #		end
 #	end
 
+	inline do |builder|
+		builder.c '_
+			VALUE parse_get_vars(char *str, int len) {
+				int i=0, flag = 0;
+				char key[300], data[300];
+				int key_i = 0, data_i = 0;
+				VALUE rb_hash = rb_hash_new();
+
+				for(i=0; i<len; i++) {
+					if(str[i] == 38) {
+						key[i] = 0; data[i] = 0;
+						rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
+						key_i = 0; data_i = 0;
+						flag = 0;
+					}
+					else if(str[i] == 61) {
+						flag = 1;
+					}
+					else {
+						if(flag == 1) {
+							data[data_i] = str[i];
+							data_i++;
+						}
+						else {
+							key[key_i] = str[i];
+							key_i++;
+						}
+
+					}
+				}
+				rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
+				return(rb_hash);
+
+			}
+
+		'
+	end
 end
 
 class Tracker
@@ -91,13 +128,11 @@ class Tracker
 
 		@mutex = Mutex.new
 
-		@last_db_write = Time.now.to_i
-
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		#sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }@
-		#sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
+		sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
+		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 	end
 	
 	def call(env)
@@ -205,12 +240,16 @@ class Tracker
 
 			key = MEMCACHED_PREFIX + "tracker_torrents_" + i[:id]
 			data = i[:peers]
-
+			out = []
+			puts "---"
 			data.each_pair do |k, h| #Peer ids are binary, need to be base64'd
-				data[Base64.b64encode(k)] = h #This can be made shorter by removing unnecessary stuff
-				data.delete(k)
+				puts h.inspect
+				out << { "id"=>h[:id], "downloaded" => h[:downloaded], "uploaded"=>h[:uploaded],
+					"completed" => h[:completed], "left" => h[:left], "ip" => h[:ip], "port"=> h[:port], "peer_id" => [k].pack("m")
+				} #This can be made shorter by removing unnecessary stuff
 			end
-			data = JSON.generate(data)
+			puts out.inspect
+			data = JSON.generate(out)
 
 			@cache.set key, data, ANNOUNCE_INTERVAL*2 #To avoid edge issues with time. Since a torrent *must* have new info every announce, this ensures that the data will never expire out of memcache. THERE IS ONE EXCEPTION: if a torrent has no peers
 		end
@@ -218,83 +257,57 @@ class Tracker
 	end
 
 	def write_db
-		# Record last time that we did a writ
-		diff = Time.now - @last_db_write
-		@last_db_write = Time.now.to_i
-
 		t = Time.now.to_f
 		#Update users stats first
 		query = "INSERT INTO users_main (ID, Uploaded, Downloaded) VALUES\n"
+		counter = 0
 		@users.each_value do |i|
 			next if i[:delta_up] == 0 and i[:delta_down] == 0
-			query += "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')\n"
+			if i[:delta_up] > 0 and i[:delta_down] > 0 # prevent -ve stats
+				counter += 1
+				query += "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')\n"
+			else
+				puts "SERIOUS CHEATING or a bug"
+			end
 			i[:delta_up] = 0
 			i[:delta_down] = 0
 		end
 		query += "ON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded)"
-		puts query
-		@db.query(query)
+		puts "--Generation of query #{Time.now.to_f - t} seconds."
+		if counter > 0
+			puts query
+			@db.query(query)
+		end
 		puts "Updating user stats took #{Time.now.to_f - t} seconds."
 
 		t = Time.now.to_f
 		#Update transfer_history
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, seedtime) VALUES\n"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active) VALUES\n"
+		counter = 0
 		@torrents.each_value do |i|
-			i[:peers].each do |p|
-				next if p[:modified] == false
-				time_since_start = @last_db_write - p[:start_time]
-				time = (diff < time_since_start) ? diff : time_since_start
-				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{time}')\n"
+			i[:peers].each_value do |p|
+				next if p[:delta_up] == 0 and p[:delta_down] == 0 and p[:delta_time] == 0 and p[:force_update] != true
+				counter += 1
+				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1')\n"
+				p[:delta_up] = 0
+				p[:delta_down] = 0
+				p[:delta_time] = 0
+				p[:force_update] = false
 			end
 		end
-		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime)"
-		puts query
-		@db.query(query)
+		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active)"
+		puts "--Generation of query #{Time.now.to_f - t} seconds."
+		if counter > 0
+			puts query
+			@db.query(query)
+		end
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 	end
 
-	inline do |builder|
-		builder.c '_
-			VALUE parse_get_vars(char *str, int len) {
-				int i=0, flag = 0;
-				char key[300], data[300];
-				int key_i = 0, data_i = 0;
-				VALUE rb_hash = rb_hash_new();
-
-				for(i=0; i<len; i++) {
-					if(str[i] == 38) {
-						key[i] = 0; data[i] = 0;
-						rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
-						key_i = 0; data_i = 0;
-						flag = 0;
-					}
-					else if(str[i] == 61) {
-						flag = 1;
-					}
-					else {
-						if(flag == 1) {
-							data[data_i] = str[i];
-							data_i++;
-						}
-						else {
-							key[key_i] = str[i];
-							key_i++;
-						}
-
-					}
-				}
-				rb_hash_aset(rb_hash, rb_str_new(key, key_i), rb_str_new(data, data_i));
-				return(rb_hash);
-
-			}
-
-		'
-	end
-
-
 	def announce(env)
 		
-		passkey = 'bl0kp8070f3hzxto49t2u5v7s5euim83'
+		passkey = env['PATH_INFO'][1..-10]
+
 		if passkey == ''
 			return simple_response({'failure reason' => 'This is private. You need a passkey'}.bencode)
 		elsif (user = @users[passkey]).nil?
@@ -320,7 +333,7 @@ class Tracker
 		downloaded = get_vars['downloaded']
 		left = get_vars['left']
 		if info_hash.nil? or info_hash == '' or peer_id.nil? or peer_id == '' or port.nil? or port == '' or uploaded.nil? or uploaded == '' or downloaded.nil? or downloaded == '' or left.nil? or left == ''
-			raise "DSDF"
+			return simple_response({'failure reason' => 'Invalid Request'}.bencode)
 		end
 		begin
 			port = Integer(port)
@@ -328,7 +341,7 @@ class Tracker
 			downloaded = Integer(downloaded)
 			left = Integer(left)
 		rescue ArgumentError
-			raise "fdsi"
+			return simple_response({'failure reason' => 'Invalid Request'}.bencode)
 		end
 
 		torrent = @torrents[info_hash]
@@ -339,14 +352,14 @@ class Tracker
 
 		event = get_vars['event']
 		peers = torrent[:peers]
-		if (peer = peers[peer_id]).nil? # New peer
-			if event != 'started'
-				raise "You must start first"
-			else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded})
-			end
+		t = Time.now.to_i
+		if (peer = peers[peer_id]).nil? # New peer - screw being compliant
+			#if event != 'started'
+			#	raise "You must start first"
+			#else
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => t, :delta_time => 0, :last_announce => t, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded, :force_update => true})
+			#end
 		end
-		peer[:modified] = true
 
 		if event == 'stopped' or event == 'paused'
 			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
@@ -354,11 +367,14 @@ class Tracker
 			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env[IPADDRKEY] 
 			peer[:port] = port
 			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
-			
-			peer[:last_announce] = Time.now.to_i
+		
+			if(left == 0)
+				peer[:delta_time] += t - peer[:last_announce] # seed time
+			end
+			peer[:last_announce] = t
 
-			peer[:delta_up] += peer[:uploaded] - uploaded
-			peer[:delta_down] += peer[:downloaded] - downloaded
+			peer[:delta_up] += uploaded - peer[:uploaded]
+			peer[:delta_down] += downloaded - peer[:downloaded]
 
 			user[:delta_up] += peer[:delta_up] # Update users stats
 			user[:delta_down] += peer[:delta_down]
@@ -389,6 +405,8 @@ class Tracker
 			output['peers'] =  peers.map { |peer_id, a| { 'peer id' => peer_id, 'ip' => a[:ip], 'port' => a[:port] } }
 		end
 
+		puts peer.inspect
+		puts user.inspect
 		return simple_response(output.bencode)
 	end
 

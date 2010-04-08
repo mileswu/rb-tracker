@@ -343,7 +343,7 @@ class Tracker
 			if event != 'started'
 				raise "You must start first"
 			else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => get_vars['uploaded'], :downloaded => get_vars['downloaded']})
+				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => Time.now.to_i, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded})
 			end
 		end
 		peer[:modified] = true
@@ -351,7 +351,7 @@ class Tracker
 		if event == 'stopped' or event == 'paused'
 			peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
-			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env['REMOTE_ADDR']
+			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env[IPADDRKEY] 
 			peer[:port] = port
 			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
 			
@@ -363,8 +363,8 @@ class Tracker
 			user[:delta_up] += peer[:delta_up] # Update users stats
 			user[:delta_down] += peer[:delta_down]
 
-			peer[:uploaded] = get_vars['uploaded'] # Update transfer_history
-			peer[:downloaded] = get_vars['downloaded']
+			peer[:uploaded] = uploaded # Update transfer_history
+			peer[:downloaded] = downloaded
 
 			peer[:left] = left
 			peer[:completed] = (left == 0 ? true : false)

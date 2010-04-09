@@ -260,7 +260,7 @@ class Tracker
 		counter = 0
 		@users.each_value do |i|
 			next if i[:delta_up] == 0 and i[:delta_down] == 0
-			if i[:delta_up] > 0 and i[:delta_down] > 0 # prevent -ve stats
+			if i[:delta_up] >= 0 and i[:delta_down] >= 0 # prevent -ve stats
 				counter += 1
 				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')"
 			else
@@ -440,8 +440,5 @@ class Tracker
 		return simple_response(output.bencode)
 	end
 
-	def snatched_completed(tid, uid)
-		#@db.query("INSERT INTO xbt_snatched (uid, tstamp, fid) VALUES('#{uid}', '#{Time.now.to_i}', '#{tid}')")
-	end
 end
 

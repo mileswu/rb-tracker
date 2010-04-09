@@ -236,7 +236,7 @@ class Tracker
 			i[:peers].each_pair do |k,p|
 				if((t - p[:last_announce]) > 2*ANNOUNCE_INTERVAL) # 2 for leniency
 					counter += 1
-					query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed] ? 1 : 0}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch]}', '#{p[:remaining]}')"
+					query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed] ? 1 : 0}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch]}', '#{p[:left]}')"
 					i[:peers].delete(k)
 					i[:modified] = true
 				end
@@ -287,7 +287,7 @@ class Tracker
 			i[:peers].each_value do |p|
 				next if p[:delta_up] == 0 and p[:delta_down] == 0 and p[:delta_time] == 0 and p[:force_update] != true and p[:delta_snatch] == 0
 				counter += 1
-				query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed] ? 1 : 0}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch]}', '#{p[:remaining]}')"
+				query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed] ? 1 : 0}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch]}', '#{p[:left]}')"
 				p[:delta_up] = 0
 				p[:delta_down] = 0
 				p[:delta_time] = 0

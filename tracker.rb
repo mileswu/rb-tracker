@@ -218,7 +218,7 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1'), :modified => true}
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1'), :modified => true, :delta_snatch => 0}
 			else
 				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
 			end
@@ -231,18 +231,20 @@ class Tracker
 	def clean_up
 		t = Time.now.to_f
 		counter = 0
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
+		query_values = []
 		@torrents.each_value do |i|
 			i[:peers].each_pair do |k,p|
 				if((t - p[:last_announce]) > 2*ANNOUNCE_INTERVAL) # 2 for leniency
 					counter += 1
-					query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch}')\n"
+					query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch]}'),\n"
 					i[:peers].delete(k)
 					i[:modified] = true
 				end
 			end
 		end
-		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
+		query += query_values.join(",\n")
+		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
 		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
@@ -254,20 +256,22 @@ class Tracker
 	def write_db
 		t = Time.now.to_f
 		#Update users stats first
-		query = "INSERT INTO users_main (ID, Uploaded, Downloaded) VALUES\n"
+		query_values = []
 		counter = 0
 		@users.each_value do |i|
 			next if i[:delta_up] == 0 and i[:delta_down] == 0
 			if i[:delta_up] > 0 and i[:delta_down] > 0 # prevent -ve stats
 				counter += 1
-				query += "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')\n"
+				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')"
 			else
 				puts "SERIOUS CHEATING or a bug"
 			end
 			i[:delta_up] = 0
 			i[:delta_down] = 0
 		end
-		query += "ON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded)"
+		query = "INSERT INTO users_main (ID, Uploaded, Downloaded) VALUES\n"
+		query += query_values.join(",\n")
+		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
@@ -277,13 +281,13 @@ class Tracker
 
 		t = Time.now.to_f
 		#Update transfer_history - there aer 
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
+		query_values = []
 		counter = 0
 		@torrents.each_value do |i|
 			i[:peers].each_value do |p|
 				next if p[:delta_up] == 0 and p[:delta_down] == 0 and p[:delta_time] == 0 and p[:force_update] != true and p[:delta_snatch] == 0
 				counter += 1
-				query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch}')\n"
+				query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch]}')"
 				p[:delta_up] = 0
 				p[:delta_down] = 0
 				p[:delta_time] = 0
@@ -291,7 +295,9 @@ class Tracker
 				p[:force_update] = false
 			end
 		end
-		query += "ON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
+		query += query_values.join(",\n")
+		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
@@ -302,17 +308,19 @@ class Tracker
 		
 		t = Time.now.to_f
 		#Update Torrents table for seed/peer/snatch numbers
-		query = "INSERT INTO torrents (uid, Snatched, Seeders, Leechers) VALUES\n"
+		query_values = []
 		counter = 0
 		@torrents.each_value do |i|
 			next if i[:modified] == false and i[:delta_snatch] == 0
 			counter += 1
 			no_complete = i[:peers].select { |peer_id, a| a[:completed] }.count
 			leechers = i[:peers].count - no_complete
-			query += "('#{i[:id]}', '#{i[:delta_snatch]}', '#{no_complete}', '#{leechers}')"
+			query_values << "('#{i[:id]}', '#{i[:delta_snatch]}', '#{no_complete}', '#{leechers}')"
 		end
-		query += "ON DUPLICATE KEY UPDATE Snatched = Snatched + VALUES(Snatched), Seeders = VALUES(Seeders), Leechers = VALUES(Leechers)"
-		puts "--Generation of query #{Time.now.to_f - t} seconds."
+		query = "INSERT INTO torrents (ID, Snatched, Seeders, Leechers) VALUES\n"
+		query += query_values.join(",\n")
+		query += "\nON DUPLICATE KEY UPDATE Snatched = Snatched + VALUES(Snatched), Seeders = VALUES(Seeders), Leechers = VALUES(Leechers)"
+		puts "--Generation of torrents query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
 			@db.query(query)

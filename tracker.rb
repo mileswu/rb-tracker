@@ -2,7 +2,6 @@ require 'libs/bencode'
 require 'ipaddr'
 require 'json'
 require 'mysql'
-require 'memcached'
 require 'config'
 require 'base64'
 require 'inline'
@@ -124,14 +123,12 @@ class Tracker
 
 		@db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 		@db.reconnect = true
-		@cache = Memcached.new("localhost:11211")
 
 		@mutex = Mutex.new
 
 		read_marshal
 		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		#sleep_loop(WRITE_MEMCACHED_FREQUENCY) { @mutex.synchronize { write_memcached } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
 	end
@@ -229,32 +226,6 @@ class Tracker
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
 		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }
 		puts "Fetching torrents took #{Time.now.to_f - t} seconds. #{@torrents.length} active torrents"
-	end
-
-	def write_memcached
-		t = Time.now.to_f
-		@torrents.each_value do |i|
-			if i[:modified] == false # no point updating stuff when it's not changed 
-				next
-			end
-			i[:modified] = false
-
-			key = MEMCACHED_PREFIX + "tracker_torrents_" + i[:id]
-			data = i[:peers]
-			out = []
-			puts "---"
-			data.each_pair do |k, h| #Peer ids are binary, need to be base64'd
-				puts h.inspect
-				out << { "id"=>h[:id], "downloaded" => h[:downloaded], "uploaded"=>h[:uploaded],
-					"completed" => h[:completed], "left" => h[:left], "ip" => h[:ip], "port"=> h[:port], "peer_id" => [k].pack("m")
-				} #This can be made shorter by removing unnecessary stuff
-			end
-			puts out.inspect
-			data = JSON.generate(out)
-
-			@cache.set key, data, ANNOUNCE_INTERVAL*2 #To avoid edge issues with time. Since a torrent *must* have new info every announce, this ensures that the data will never expire out of memcache. THERE IS ONE EXCEPTION: if a torrent has no peers
-		end
-		puts "Memcached writes took #{Time.now.to_f - t} seconds."
 	end
 
 	def clean_up

@@ -238,6 +238,7 @@ class Tracker
 					counter += 1
 					query += "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch}')\n"
 					i[:peers].delete(k)
+					i[:modified] = true
 				end
 			end
 		end
@@ -297,6 +298,27 @@ class Tracker
 			@db.query(query)
 		end
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
+		
+		
+		t = Time.now.to_f
+		#Update Torrents table for seed/peer/snatch numbers
+		query = "INSERT INTO torrents (uid, Snatched, Seeders, Leechers) VALUES\n"
+		counter = 0
+		@torrents.each_value do |i|
+			next if i[:modified] == false and i[:delta_snatch] == 0
+			counter += 1
+			no_complete = i[:peers].select { |peer_id, a| a[:completed] }.count
+			leechers = i[:peers].count - no_complete
+			query += "('#{i[:id]}', '#{i[:delta_snatch]}', '#{no_complete}', '#{leechers}')"
+		end
+		query += "ON DUPLICATE KEY UPDATE Snatched = Snatched + VALUES(Snatched), Seeders = VALUES(Seeders), Leechers = VALUES(Leechers)"
+		puts "--Generation of query #{Time.now.to_f - t} seconds."
+		if counter > 0
+			puts query
+			@db.query(query)
+		end
+		puts "Updating torrents table took #{Time.now.to_f - t} seconds"
+
 	end
 
 	def announce(env)
@@ -343,7 +365,6 @@ class Tracker
 		if torrent.nil?
 			return simple_response({'failure reason' => 'This torrent does not exist'}.bencode)
 		end
-		torrent[:modified] = true # flags it for the memcache route
 
 		event = get_vars['event']
 		peers = torrent[:peers]
@@ -354,6 +375,7 @@ class Tracker
 			#else
 				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => t, :delta_time => 0, :last_announce => t, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded, :force_update => true, :delta_snatch => 0})
 			#end
+				torrent[:modified] = true # flags it for the DB update
 		end
 
 		if event == 'stopped' or event == 'paused'
@@ -382,6 +404,7 @@ class Tracker
 			peer[:completed] = (left == 0 ? true : false)
 			if event == 'completed' #increment snatch
 				peer[:delta_snatch] += 1
+				torrent[:delta_snatch] += 1
 			end
 		end
 		

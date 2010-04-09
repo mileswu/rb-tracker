@@ -415,6 +415,7 @@ class Tracker
 			if event == 'completed' #increment snatch
 				peer[:delta_snatch] += 1
 				torrent[:delta_snatch] += 1
+				@db.query("UPDATE transfer_history SET snatched_time = '#{t}' WHERE uid = '#{peer[:id]}' AND fid = '#{torrent[:id]}'")
 			end
 		end
 		

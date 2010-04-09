@@ -316,6 +316,8 @@ class Tracker
 			no_complete = i[:peers].select { |peer_id, a| a[:completed] }.count
 			leechers = i[:peers].count - no_complete
 			query_values << "('#{i[:id]}', '#{i[:delta_snatch]}', '#{no_complete}', '#{leechers}')"
+			i[:modified] = false
+			i[:delta_snatch] = 0
 		end
 		query = "INSERT INTO torrents (ID, Snatched, Seeders, Leechers) VALUES\n"
 		query += query_values.join(",\n")

@@ -236,15 +236,15 @@ class Tracker
 			i[:peers].each_pair do |k,p|
 				if((t - p[:last_announce]) > 2*ANNOUNCE_INTERVAL) # 2 for leniency
 					counter += 1
-					query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch]}'),\n"
+				query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '0', '#{p[:delta_snatch]}', '#{p[:remaining]}')"
 					i[:peers].delete(k)
 					i[:modified] = true
 				end
 			end
 		end
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched, remaining) VALUES\n"
 		query += query_values.join(",\n")
-		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
+		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched), remaining = VALUES(remaining)"
 		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query
@@ -287,7 +287,7 @@ class Tracker
 			i[:peers].each_value do |p|
 				next if p[:delta_up] == 0 and p[:delta_down] == 0 and p[:delta_time] == 0 and p[:force_update] != true and p[:delta_snatch] == 0
 				counter += 1
-				query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch]}')"
+				query_values << "('#{p[:id]}', '#{i[:id]}', '#{p[:delta_up]}', '#{p[:delta_down]}', '1', '#{p[:completed]}', '#{p[:start_time]}', '#{p[:last_announce]}', '#{p[:delta_time]}', '1', '#{p[:delta_snatch]}', '#{p[:remaining]}')"
 				p[:delta_up] = 0
 				p[:delta_down] = 0
 				p[:delta_time] = 0
@@ -295,9 +295,9 @@ class Tracker
 				p[:force_update] = false
 			end
 		end
-		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched) VALUES\n"
+		query = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, starttime, last_announce, seedtime, active, snatched, remaining) VALUES\n"
 		query += query_values.join(",\n")
-		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched)"
+		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched), remaining = VALUES(remaining)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			puts query

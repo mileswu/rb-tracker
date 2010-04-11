@@ -127,10 +127,8 @@ class Tracker
 		@mutex = Mutex.new
 
 		read_marshal
-		sleep_loop(READ_DB_FREQUENCY, true) { @mutex.synchronize { read_db } }
+		sleep_loop(60, true) { @mutex.synchronize { read_db } }
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
-		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
-		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
 		read_client_whitelists
 	end
 	
@@ -189,11 +187,12 @@ class Tracker
 	end
 
 	def read_client_whitelists
-		@client_whitelist = []
+		a = []
 		results = @db.query("SELECT * from xbt_client_whitelist")
 		results.each_hash do |i|
-			@client_whitelist << i["peer_id"]
+			a << i["peer_id"]
 		end
+		@client_whitelist = Regexp.new("^("+a.join("|")+")")
 	end
 
 	def read_users
@@ -383,15 +382,8 @@ class Tracker
 		if torrent.nil?
 			return simple_response({'failure reason' => 'This torrent does not exist'}.bencode)
 		end
-		
-		matches_whitelist = false
-		for i in @client_whitelist
-			if(peer_id[0..(i.length-1)] == i)
-				matches_whitelist = true
-				break
-			end
-		end
-		if matches_whitelist == false
+
+		if peer_id.match(@client_whitelist) == nil
 			return simple_response({'failure reason' => 'This client is not approved'}.bencode)
 		end
 
@@ -454,8 +446,7 @@ class Tracker
 			output['peers'] =  peers.map { |peer_id, a| { 'peer id' => peer_id, 'ip' => a[:ip], 'port' => a[:port] } }
 		end
 
-		puts peer.inspect
-		puts user.inspect
+	#	puts output.inspect
 		return simple_response(output.bencode)
 	end
 

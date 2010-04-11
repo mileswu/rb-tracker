@@ -131,6 +131,7 @@ class Tracker
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
+		read_client_whitelists
 	end
 	
 	def call(env)
@@ -185,6 +186,14 @@ class Tracker
 	def read_db
 		read_users
 		read_torrents
+	end
+
+	def read_client_whitelists
+		@client_whitelist = []
+		results = @db.query("SELECT * from xbt_client_whitelist")
+		results.each_hash do |i|
+			@client_whitelist << i["peer_id"]
+		end
 	end
 
 	def read_users
@@ -332,7 +341,6 @@ class Tracker
 	end
 
 	def announce(env)
-		
 		passkey = env['PATH_INFO'][1..-10]
 
 		if passkey == ''
@@ -374,6 +382,17 @@ class Tracker
 		torrent = @torrents[info_hash]
 		if torrent.nil?
 			return simple_response({'failure reason' => 'This torrent does not exist'}.bencode)
+		end
+		
+		matches_whitelist = false
+		for i in @client_whitelist
+			if(peer_id[0..(i.length-1)] == i)
+				matches_whitelist = true
+				break
+			end
+		end
+		if matches_whitelist == false
+			return simple_response({'failure reason' => 'This client is not approved'}.bencode)
 		end
 
 		event = get_vars['event']

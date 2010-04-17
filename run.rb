@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'ebb/lib/ebb'
+require 'ebb'
 require 'rack'
 require 'rack/showexceptions'
 require 'rack/request'

@@ -5,6 +5,7 @@ db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 
 # Reset tables
 db.query "DROP TABLE `transfer_history`"
+db.query "DROP TABLE `transfer_ips`"
 
 db.query "CREATE TABLE IF NOT EXISTS `transfer_history` (
   `uid` int(11) NOT NULL default '0',
@@ -32,7 +33,7 @@ db.query "CREATE TABLE IF NOT EXISTS transfer_ips (
   starttime int(11) NOT NULL default '0',
   uid int(11) NOT NULL default '0',
   fid int(11) NOT NULL default '0',
-  peer_id BINARY(20) default '',
+  peer_id CHAR(100) default '',
   ip CHAR(15) default '',
   port int(11) NOT NULL default '0',
   PRIMARY KEY (uid, fid, peer_id),

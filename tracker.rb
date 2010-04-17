@@ -275,19 +275,20 @@ class Tracker
 		query_values = []
 		counter = 0
 		@users.each_value do |i|
-			next if i[:delta_up] == 0 and i[:delta_down] == 0
-			if i[:delta_up] >= 0 and i[:delta_down] >= 0 # prevent -ve stats
+			next if i[:delta_up] == 0 and i[:delta_rawdl] == 0
+			if i[:delta_up] >= 0 and i[:delta_down] >= 0 and i[:delta_rawdl] >= 0 # prevent -ve stats
 				counter += 1
-				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}')"
+				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}', '#{i[:delta_rawdl]}')"
 			else
 				puts "SERIOUS CHEATING or a bug"
 			end
 			i[:delta_up] = 0
 			i[:delta_down] = 0
+			i[:delta_rawdl] = 0
 		end
-		query = "INSERT INTO users_main (ID, Uploaded, Downloaded) VALUES\n"
+		query = "INSERT INTO users_main (ID, Uploaded, Downloaded, rawdl) VALUES\n"
 		query += query_values.join(",\n")
-		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded)"
+		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded), rawdl = rawdl + VALUES(rawdl)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			#puts query
@@ -430,7 +431,8 @@ class Tracker
 			peer[:delta_down] += downloaded - peer[:downloaded]
 
 			user[:delta_up] += peer[:delta_up] # Update users stats
-			user[:delta_down] += peer[:delta_down]
+			user[:delta_down] += peer[:delta_down] if t[:free] == false
+			user[:delta_rawdl] += peer[:delta_down]
 
 			peer[:uploaded] = uploaded # Update transfer_history
 			peer[:downloaded] = downloaded

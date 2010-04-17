@@ -129,6 +129,8 @@ class Tracker
 		read_marshal
 		sleep_loop(60, true) { @mutex.synchronize { read_db } }
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
+		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
+		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
 		read_client_whitelists
 	end
 	
@@ -255,7 +257,7 @@ class Tracker
 		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched), remaining = VALUES(remaining)"
 		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
 		if counter > 0
-			puts query
+			#puts query
 			@db.query(query)
 		end
 		puts "Updating cleaning stats took #{Time.now.to_f - t} seconds."
@@ -282,7 +284,7 @@ class Tracker
 		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
-			puts query
+			#puts query
 			@db.query(query)
 		end
 		puts "Updating user stats took #{Time.now.to_f - t} seconds."
@@ -308,7 +310,7 @@ class Tracker
 		query += "\nON DUPLICATE KEY UPDATE uploaded = uploaded + VALUES(uploaded), downloaded = downloaded + VALUES(downloaded), connectable = VALUES(connectable), seeding = VALUES(seeding), seedtime = seedtime + VALUES(seedtime), last_announce = VALUES(last_announce), active = VALUES(active), snatched = snatched + VALUES(snatched), remaining = VALUES(remaining)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
-			puts query
+			#puts query
 			@db.query(query)
 		end
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
@@ -332,7 +334,7 @@ class Tracker
 		query += "\nON DUPLICATE KEY UPDATE Snatched = Snatched + VALUES(Snatched), Seeders = VALUES(Seeders), Leechers = VALUES(Leechers)"
 		puts "--Generation of torrents query #{Time.now.to_f - t} seconds."
 		if counter > 0
-			puts query
+			#puts query
 			@db.query(query)
 		end
 		puts "Updating torrents table took #{Time.now.to_f - t} seconds"

@@ -38,7 +38,7 @@ end
 
 class Client
    def initialize()
-      @peer_id = random_byte_string(20)
+      @peer_id = "-UT20"+random_byte_string(15)
       @port = rand(10000) + 30000
       @compact = rand(2)
       @numwant = rand(4000)
@@ -117,6 +117,10 @@ class ClientTorrent
 	end
 
 	include Comparable
+
+	def to_s
+		return {:hash => big_hash, :time => @time_due}.inspect
+	end
 end
 
 class Simulator
@@ -133,9 +137,11 @@ class Simulator
       @queue = PriorityQueue.new
 
       Torrent.from_db(@db).each do |t|
-         c = Client.new
-         ct = ClientTorrent.new(c, t)
-         @queue.insert(ct)
+         for i in 1..2 do
+				c = Client.new
+         	ct = ClientTorrent.new(c, t)
+         	@queue.insert(ct)
+			end
       end
       print "done\n"
       print "There are #{@queue.size} Client / Torrent pairs\n"
@@ -146,6 +152,7 @@ class Simulator
 
    def make_request()
       ct = @queue.remove_head()
+		puts "GOT #{ct}"
       
       t = Time.now
 		delay = ct.time_due - (t - @start_time)
@@ -161,7 +168,7 @@ class Simulator
    end
 
    def go()
-      10000.times do |i|
+      10000000.times do |i|
          puts i if(i%500 == 0)
          make_request()
       end

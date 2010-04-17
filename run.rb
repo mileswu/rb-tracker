@@ -1,3 +1,4 @@
+require 'rubygems'
 require 'ebb/lib/ebb'
 require 'rack'
 require 'rack/showexceptions'

@@ -456,10 +456,15 @@ class Tracker
 					  'incomplete' => peers.count - no_complete
 		}
 
+		n = get_vars['numwant'].to_i
+		if n < 0 or n > 50
+			n = 50
+		end
+
 		if get_vars['compact'] == '1' # Binary string
-			output['peers'] = peers.map { |peer_id, a| a[:compact] }.join('')
+			output['peers'] = peers.map { |peer_id, a| a[:compact] }.sort_by {rand}[0..(n-1)].join('')
 		else
-			output['peers'] =  peers.map { |peer_id, a| { 'peer id' => peer_id, 'ip' => a[:ip], 'port' => a[:port] } }
+			output['peers'] =  peers.map { |peer_id, a| { 'peer id' => peer_id, 'ip' => a[:ip], 'port' => a[:port] } }.sort_by {rand}[0..(n-1)]
 		end
 
 	#	puts output.inspect

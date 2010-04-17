@@ -208,7 +208,7 @@ class Tracker
 				p = i["torrent_pass"]
 				passkeys << p
 				if(@users[p].nil?)
-					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0 }
+					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0, :delta_rawdl => 0}
 				end
 			end
 		end

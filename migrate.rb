@@ -27,6 +27,19 @@ db.query "CREATE TABLE IF NOT EXISTS `transfer_history` (
   KEY `fid` (`fid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;"
 
+db.query "CREATE TABLE IF NOT EXISTS transfer_ips (
+  last_announce int(11) NOT NULL default '0',
+  starttime int(11) NOT NULL default '0',
+  uid int(11) NOT NULL default '0',
+  fid int(11) NOT NULL default '0',
+  peer_id BINARY(20) default '',
+  ip CHAR(15) default '',
+  port int(11) NOT NULL default '0',
+  PRIMARY KEY (uid, fid, peer_id),
+  KEY (uid, fid)
+ ) ENGINE=InnoDB;
+ " 
+
 # Migrate xbt_files_users_dead
 query_values = []
 query_b = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, last_announce, seedtime, active, remaining) VALUES\n"
@@ -46,7 +59,7 @@ end
 results = db.query "SELECT * from xbt_files_users"
 counter += results.num_rows
 results.each_hash do |i|
-	query_values << "('#{i['uid']}', '#{i['fid']}', '#{i['uploaded']}', '#{i['downloaded']}', '1', '#{i['remaining'] == '0' ? 1 : 0}', '#{i['mtime']}', '#{i['timespent']}', '1', '#{i[:remaining]}')"
+	query_values << "('#{i['uid']}', '#{i['fid']}', '#{i['uploaded']}', '#{i['downloaded']}', '1', '#{i['remaining'] == '0' ? 1 : 0}', '#{i['mtime']}', '#{i['timespent']}', '0', '#{i[:remaining]}')"
 	counter += 1
 	if(counter%1000 == 0)
 		db.query(query_b + query_values.join(",\n") + query_e)

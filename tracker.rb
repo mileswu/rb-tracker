@@ -199,7 +199,7 @@ class Tracker
 
 	def read_users
 		t = Time.now.to_f
-		results = @db.query("SELECT ID, Enabled, torrent_pass FROM users_main")
+		results = @db.query("SELECT ID, Enabled, torrent_pass, Slots FROM users_main")
 		puts "--User_query_merging: #{Time.now.to_f - t} second"
 
 		passkeys = []
@@ -208,8 +208,11 @@ class Tracker
 				p = i["torrent_pass"]
 				passkeys << p
 				if(@users[p].nil?)
-					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0, :delta_rawdl => 0}
+					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0, :delta_rawdl => 0, :slots => i["Slots"].to_i }
+				else
+					@users[:slots] = i["Slots"].to_i
 				end
+				
 			end
 		end
 
@@ -351,7 +354,6 @@ class Tracker
 			@db.query(query)
 		end
 		puts "Updating torrents table took #{Time.now.to_f - t} seconds"
-
 	end
 
 	def announce(env)
@@ -409,9 +411,22 @@ class Tracker
 			#if event != 'started'
 			#	raise "You must start first"
 			#else
-				peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => t, :delta_time => 0, :last_announce => t, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded, :force_update => true, :delta_snatch => 0})
-			#end
-				torrent[:modified] = true # flags it for the DB update
+		puts user.inspect	
+			# Check slot restrictions
+			if user[:slots] != -1
+				no_active = 0
+				@torrents.each_value do |to|
+					to[:peers].each_value do |p|
+						no_active += 1 if p[:id] == user[:id] and p[:completed] == false #Leeching
+					end
+				end
+				if no_active >= user[:slots]
+					return simple_response({'failure reason' => "You don't have enough slots free. Stop something and wait an hour"}.bencode)
+				end
+			end
+				
+			peer = (peers[peer_id] = {:id => user[:id], :completed => false, :start_time => t, :delta_time => 0, :last_announce => t, :delta_up => 0, :delta_down => 0, :uploaded => uploaded, :downloaded => downloaded, :force_update => true, :delta_snatch => 0})
+			torrent[:modified] = true # flags it for the DB update
 		end
 
 		if event == 'stopped' or event == 'paused'

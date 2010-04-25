@@ -199,7 +199,7 @@ class Tracker
 
 	def read_users
 		t = Time.now.to_f
-		results = @db.query("SELECT ID, Enabled, torrent_pass, Slots FROM users_main")
+		results = @db.query("SELECT ID, Enabled, torrent_pass, Slots, DownMultiplier, UpMultiplier FROM users_main")
 		puts "--User_query_merging: #{Time.now.to_f - t} second"
 
 		passkeys = []
@@ -208,11 +208,11 @@ class Tracker
 				p = i["torrent_pass"]
 				passkeys << p
 				if(@users[p].nil?)
-					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0, :delta_rawdl => 0, :slots => i["Slots"].to_i }
-				else
-					@users[:slots] = i["Slots"].to_i
+					@users[p] = { :id => i["ID"], :delta_up => 0, :delta_down => 0, :delta_rawdl => 0, :delta_rawup => 0 }
 				end
-				
+				@users[p][:slots] = i["Slots"].to_i
+				@users[p][:downmultiplier] = i["DownMultiplier"].to_f
+				@users[p][:upmultiplier] = i["UpMultiplier"].to_f
 			end
 		end
 
@@ -223,7 +223,7 @@ class Tracker
 	
 	def read_torrents
 		t = Time.now.to_f
-		results = @db.query("SELECT ID, info_hash, FreeTorrent FROM torrents")
+		results = @db.query("SELECT ID, info_hash, FreeTorrent, DownMultiplier, UpMultiplier FROM torrents")
 
 		puts "--Torrent_query: #{Time.now.to_f - t} seconds"
 		infohashes = []
@@ -231,10 +231,10 @@ class Tracker
 			ih = i["info_hash"]
 			infohashes << ih
 			if(@torrents[ih].nil?)
-				@torrents[ih] = { :peers => {}, :id => i["ID"], :free => (i["FreeTorrent"] == '1'), :modified => true, :delta_snatch => 0}
-			else
-				@torrents[ih][:free] = (i["FreeTorrent"] == '1')
+				@torrents[ih] = { :peers => {}, :id => i["ID"], :modified => true, :delta_snatch => 0}
 			end
+			@torrents[ih][:downmultiplier] = i["DownMultiplier"].to_f
+			@torrents[ih][:upmultiplier] = i["UpMultiplier"].to_f
 		end
 		puts "--Torrent_merging: #{Time.now.to_f - t} second"
 		(@torrents.keys - infohashes).each { |i| @torrents.delete(i) }
@@ -278,23 +278,23 @@ class Tracker
 		query_values = []
 		counter = 0
 		@users.each_value do |i|
-			next if i[:delta_up] == 0 and i[:delta_rawdl] == 0
-			if i[:delta_up] >= 0 and i[:delta_down] >= 0 and i[:delta_rawdl] >= 0 # prevent -ve stats
+			next if i[:delta_rawup] == 0 and i[:delta_rawdl] == 0
+			if i[:delta_up] >= 0 and i[:delta_down] >= 0 and i[:delta_rawdl] >= 0 and i[:delta_rawup] >= 0 # prevent -ve stats
 				counter += 1
-				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}', '#{i[:delta_rawdl]}')"
+				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}', '#{i[:delta_rawdl]}', '#{i[:delta_rawup]}')"
 			else
 				puts "SERIOUS CHEATING or a bug"
 			end
 			i[:delta_up] = 0
 			i[:delta_down] = 0
 			i[:delta_rawdl] = 0
+			i[:delta_rawup] = 0
 		end
-		query = "INSERT INTO users_main (ID, Uploaded, Downloaded, rawdl) VALUES\n"
+		query = "INSERT INTO users_main (ID, Uploaded, Downloaded, rawdl, rawup) VALUES\n"
 		query += query_values.join(",\n")
-		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded), rawdl = rawdl + VALUES(rawdl)"
+		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded), rawdl = rawdl + VALUES(rawdl), rawup = rawup + VALUES(rawup)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
-			#puts query
 			@db.query(query)
 		end
 		puts "Updating user stats took #{Time.now.to_f - t} seconds."
@@ -445,9 +445,10 @@ class Tracker
 			peer[:delta_up] += uploaded - peer[:uploaded]
 			peer[:delta_down] += downloaded - peer[:downloaded]
 
-			user[:delta_up] += peer[:delta_up] # Update users stats
-			user[:delta_down] += peer[:delta_down] if t[:free] == false
+			user[:delta_rawup] += peer[:delta_up]
 			user[:delta_rawdl] += peer[:delta_down]
+			user[:delta_up] += peer[:delta_up]*user[:upmultiplier]*torrent[:upmultiplier] # Update users stats
+			user[:delta_down] += peer[:delta_down]*user[:downmultiplier]*torrent[:downmultiplier]
 
 			peer[:uploaded] = uploaded # Update transfer_history
 			peer[:downloaded] = downloaded

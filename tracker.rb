@@ -127,6 +127,7 @@ class Tracker
 		@mutex = Mutex.new
 
 		read_marshal
+		read_db
 		sleep_loop(60, true) { @mutex.synchronize { read_db } }
 		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
@@ -218,6 +219,10 @@ class Tracker
 
 		puts "--User_merging: #{Time.now.to_f - t} second"
 		(@users.keys - passkeys).each { |i| @users.delete(i) }
+		
+		results = @db.query("SELECT mod_setting FROM mod_core WHERE mod_option='global_freeleech'")
+		@global_fl = results.fetch_row()[0]
+
 		puts "Fetching users took #{Time.now.to_f - t} seconds. #{@users.length} active users"
 	end
 	
@@ -448,7 +453,7 @@ class Tracker
 			user[:delta_rawup] += peer[:delta_up]
 			user[:delta_rawdl] += peer[:delta_down]
 			user[:delta_up] += peer[:delta_up]*user[:upmultiplier]*torrent[:upmultiplier] # Update users stats
-			user[:delta_down] += peer[:delta_down]*user[:downmultiplier]*torrent[:downmultiplier]
+			user[:delta_down] += peer[:delta_down]*user[:downmultiplier]*torrent[:downmultiplier]*@global_fl
 
 			peer[:uploaded] = uploaded # Update transfer_history
 			peer[:downloaded] = downloaded

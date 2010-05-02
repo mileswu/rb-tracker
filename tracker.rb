@@ -128,11 +128,13 @@ class Tracker
 
 		read_marshal
 		read_db
-		sleep_loop(60, true) { @mutex.synchronize { read_db } }
-		#sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
+		clean_up2
+
+		sleep_loop(READ_DB_FREQUENCY) { @mutex.synchronize { read_db } }
+		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
-		read_client_whitelists
+		sleep_loop(5*60) { @mutex.synchronize { read_client_whitelists } }
 	end
 	
 	def call(env)
@@ -281,6 +283,13 @@ class Tracker
 			@db.query(query2)
 		end
 		puts "Updating cleaning stats took #{Time.now.to_f - t} seconds."
+	end
+
+	def clean_up2 #This if for dealing with stuff that somehow snuck in and wasn't taken account of by clean_up
+		t = Time.now.to_i
+		t2 = Time.now.to_f
+		@db.query("UPDATE transfer_history SET active = '0' WHERE last_announce < #{t - 2*ANNOUNCE_INTERVAL}");
+		puts "Cleaning2 took #{Time.now.to_f - t2} seconds."
 	end
 
 	def write_db

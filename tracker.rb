@@ -133,7 +133,7 @@ class Tracker
 		sleep_loop(READ_DB_FREQUENCY) { @mutex.synchronize { read_db } }
 		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
-		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { clean_up } }
+		sleep_loop(CLEAN_FREQUENCY) { @mutex.synchronize { clean_up } }
 		sleep_loop(5*60) { @mutex.synchronize { read_client_whitelists } }
 	end
 	
@@ -497,7 +497,8 @@ class Tracker
 		no_complete = peers.select { |peer_id, a| a[:completed] }.count
 		output = { 'interval' => ANNOUNCE_INTERVAL,
 					  'complete' => no_complete,
-					  'incomplete' => peers.count - no_complete
+					  'incomplete' => peers.count - no_complete,
+					  'min interval' => MIN_INTERVAL
 		}
 
 		n = get_vars['numwant'].to_i

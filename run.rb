@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'ebb'
+require 'mongrel'
 require 'rack'
 require 'rack/showexceptions'
 require 'rack/request'
@@ -14,6 +14,6 @@ app = Rack::Builder.new do
 	run Tracker.new
 end
 
-Ebb.start_server(app, :Port=>3000)
-#Rack::Handler::Thin.run(app, :Port=>3000)
+#Ebb.start_server(app, :Port=>3000)
+Rack::Handler::Mongrel.run(app, :Port=>34500)
 

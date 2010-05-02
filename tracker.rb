@@ -125,6 +125,7 @@ class Tracker
 		@db.reconnect = true
 
 		@mutex = Mutex.new
+		@start_time = Time.now
 
 		read_marshal
 		read_db
@@ -142,9 +143,9 @@ class Tracker
 			path = env['PATH_INFO']
 			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
 				return announce(env)
-			elsif(path == '/debug')
+			elsif(path == DEBUG_PATH)
 				time = Time.now.to_f
-				body = ""
+				body = "Uptime: #{Time.now - @start_time}\n"
 				for i in @users
 					body << i.inspect + "\n"
 				end

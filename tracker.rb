@@ -221,7 +221,13 @@ class Tracker
 		(@users.keys - passkeys).each { |i| @users.delete(i) }
 		
 		results = @db.query("SELECT mod_setting FROM mod_core WHERE mod_option='global_freeleech'")
-		@global_fl = results.fetch_row()[0]
+		results_r = results.fetch_row()
+		if results_r
+			@global_fl = results_r[0].to_i
+		else
+			puts "Assuming FL is off"
+			@global_fl = 0
+		end
 
 		puts "Fetching users took #{Time.now.to_f - t} seconds. #{@users.length} active users"
 	end
@@ -284,12 +290,12 @@ class Tracker
 		counter = 0
 		@users.each_value do |i|
 			next if i[:delta_rawup] == 0 and i[:delta_rawdl] == 0
-			if i[:delta_up] >= 0 and i[:delta_down] >= 0 and i[:delta_rawdl] >= 0 and i[:delta_rawup] >= 0 # prevent -ve stats
+			#if i[:delta_up] >= 0 and i[:delta_down] >= 0 and i[:delta_rawdl] >= 0 and i[:delta_rawup] >= 0 # prevent -ve stats
 				counter += 1
 				query_values << "('#{i[:id]}', '#{i[:delta_up]}', '#{i[:delta_down]}', '#{i[:delta_rawdl]}', '#{i[:delta_rawup]}')"
-			else
-				puts "SERIOUS CHEATING or a bug"
-			end
+			#else
+			#	puts "SERIOUS CHEATING or a bug"
+			#end
 			i[:delta_up] = 0
 			i[:delta_down] = 0
 			i[:delta_rawdl] = 0
@@ -447,13 +453,21 @@ class Tracker
 			end
 			peer[:last_announce] = t
 
-			peer[:delta_up] += uploaded - peer[:uploaded]
-			peer[:delta_down] += downloaded - peer[:downloaded]
+			ddup = uploaded - peer[:uploaded]
+			dddown = downloaded - peer[:downloaded]
+			if(ddup < 0 or dddown < 0)
+				ddup = 0
+				dddown =0
+				puts "weird negative thingy again"
+			end
 
-			user[:delta_rawup] += peer[:delta_up]
-			user[:delta_rawdl] += peer[:delta_down]
-			user[:delta_up] += peer[:delta_up]*user[:upmultiplier]*torrent[:upmultiplier] # Update users stats
-			user[:delta_down] += peer[:delta_down]*user[:downmultiplier]*torrent[:downmultiplier]*@global_fl
+			peer[:delta_up] += ddup
+			peer[:delta_down] += dddown
+
+			user[:delta_rawup] += ddup
+			user[:delta_rawdl] += dddown
+			user[:delta_up] += ddup*user[:upmultiplier]*torrent[:upmultiplier] # Update users stats
+			user[:delta_down] += dddown*user[:downmultiplier]*torrent[:downmultiplier] if @global_fl != 1
 
 			peer[:uploaded] = uploaded # Update transfer_history
 			peer[:downloaded] = downloaded

@@ -445,7 +445,7 @@ class Tracker
 			#if event != 'started'
 			#	raise "You must start first"
 			#else
-		puts user.inspect	
+#		puts user.inspect	
 			# Check slot restrictions
 			if user[:slots] != -1
 				no_active = 0

@@ -136,7 +136,7 @@ class Tracker
 		sleep_loop(WRITE_MARSHALL_FREQUENCY) { @mutex.synchronize { write_marshal } }
 		sleep_loop(WRITE_DB_FREQUENCY) { @mutex.synchronize { write_db } }
 		sleep_loop(CLEAN_FREQUENCY) { @mutex.synchronize { clean_up } }
-		sleep_loop(5*60) { @mutex.synchronize { read_client_whitelists } }
+		sleep_loop(10*60) { @mutex.synchronize { read_client_whitelists; clean_up2 } }
 	end
 	
 	def call(env)

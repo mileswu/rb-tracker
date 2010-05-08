@@ -143,6 +143,18 @@ class Tracker
 			path = env['PATH_INFO']
 			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
 				return announce(env)
+			elsif(path == '/stats')
+				body = "Uptime: #{Time.now - @start_time}\n"
+				body << "Number of users #{@users.count}\n"
+				body << "Number of torrents #{@torrents.count}\n"
+
+				peers = 0
+				@torrents.each_value do |t|
+					peers += t[:peers].count
+				end
+				body << "Peers: #{peers}\n"
+
+				return [200, {'Content-Type' => 'text/plain'}, body]
 			elsif(path == DEBUG_PATH)
 				time = Time.now.to_f
 				body = "Uptime: #{Time.now - @start_time}\n"

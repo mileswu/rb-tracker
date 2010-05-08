@@ -454,7 +454,7 @@ class Tracker
 						no_active += 1 if p[:id] == user[:id] and p[:completed] == false #Leeching
 					end
 				end
-				if no_active >= user[:slots]
+				if no_active >= user[:slots] and left != 0
 					return simple_response({'failure reason' => "You don't have enough slots free. Stop something and wait an hour"}.bencode)
 				end
 			end

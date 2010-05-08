@@ -5,9 +5,10 @@ require 'config'
 db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 
 # Reset tables
-db.query "DROP TABLE `transfer_history`"
-db.query "DROP TABLE `transfer_ips`"
+#db.query "DROP TABLE `transfer_history`"
+#db.query "DROP TABLE `transfer_ips`"
 
+=begin
 db.query "CREATE TABLE IF NOT EXISTS `transfer_history` (
   `uid` int(11) NOT NULL default '0',
   `fid` int(11) NOT NULL default '0',
@@ -28,6 +29,22 @@ db.query "CREATE TABLE IF NOT EXISTS `transfer_history` (
   KEY `uid` (`uid`),
   KEY `fid` (`fid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;"
+=end
+
+db.query("BEGIN;");
+
+db.query("ALTER TABLE transfer_history ADD (
+  `remaining` int(11) NOT NULL default '0',
+  `active` enum('0','1') NOT NULL default '0',
+  `starttime` int(11) NOT NULL default '0',
+  `last_announce` int(11) NOT NULL default '0',
+  `snatched` int(11) NOT NULL default '0',
+  `snatched_time` int(11) default '0',
+	KEY uid (uid),
+	KEY fid (fid));")
+
+db.query "UPDATE transfer_history SET hnr = '2', last_announce = UNIX_TIMESTAMP(last_action);"
+db.query "ALTER TABLE transfer_history DROP last_action;"
 
 db.query "CREATE TABLE IF NOT EXISTS transfer_ips (
   last_announce int(11) NOT NULL default '0',
@@ -42,6 +59,7 @@ db.query "CREATE TABLE IF NOT EXISTS transfer_ips (
  ) ENGINE=InnoDB;
  " 
 
+=begin
 # Migrate xbt_files_users_dead
 query_values = []
 query_b = "INSERT INTO transfer_history (uid, fid, uploaded, downloaded, connectable, seeding, last_announce, seedtime, active, remaining) VALUES\n"
@@ -72,6 +90,7 @@ end
 if(counter%1000 != 0)
 	db.query(query_b + query_values.join(",\n") + query_e)
 end
+=end
 
 # Migrate xbt_snatched
 query_b = "INSERT INTO transfer_history (uid, fid, snatched, snatched_time) VALUES\n"
@@ -92,6 +111,8 @@ if(counter%1000 != 0)
 	db.query(query_b + query_values.join(",\n") + query_e)
 	query_values = []
 end
+
+db.query("COMMIT;")
 
 # Raname old tables
 #db.query "RENAME TABLE xbt_files_users TO xbt_files_users_old

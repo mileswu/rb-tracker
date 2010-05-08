@@ -128,6 +128,7 @@ class Tracker
 		@start_time = Time.now
 
 		read_marshal
+		read_client_whitelists
 		read_db
 		clean_up2
 

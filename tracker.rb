@@ -127,17 +127,18 @@ class Mysql
 				self.query(q)
 			end
 		rescue Mysql::Error => err
-			if self.errno == 1210
+			#if self.errno == 1210
 				puts q
 				@stash.insert(q, 0)
 				puts "DEADLOCK. Will retry later"
 				f = File.open("deadlocks.log", "a+")
 				f.puts q
 				f.puts Time.now.inspect
+				f.puts self.errno
 				f.close
-			else
-				raise
-			end
+			#else
+			#	raise
+			#end
 		end
 	end
 

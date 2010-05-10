@@ -115,6 +115,31 @@ module TrackerHelper
 	end
 end
 
+class Mysql
+	def query2(str)
+		if @stash.nil?
+			@stash = []
+		end
+		@stash << str
+
+		begin
+			while (q = @stash.shift)
+				self.query(q)
+			end
+		rescue Mysql::Error => err
+			if self.errno == 1210
+				puts q
+				@stash.insert(q, 0)
+				puts "DEADLOCK. Will retry later"
+			else
+				raise
+			end
+		end
+	end
+
+
+end
+
 class Tracker
 	include TrackerHelper
 
@@ -293,8 +318,8 @@ class Tracker
 		puts "--Generation of query and cleaning took #{Time.now.to_f - t} seconds."
 		if counter > 0
 			#puts query
-			@db.query(query)
-			@db.query(query2)
+			@db.query2(query)
+			@db.query2(query2)
 		end
 		puts "Updating cleaning stats took #{Time.now.to_f - t} seconds."
 	end
@@ -302,7 +327,7 @@ class Tracker
 	def clean_up2 #This if for dealing with stuff that somehow snuck in and wasn't taken account of by clean_up
 		t = Time.now.to_i
 		t2 = Time.now.to_f
-		@db.query("UPDATE transfer_history SET active = '0' WHERE last_announce < #{t - 2*ANNOUNCE_INTERVAL}");
+		@db.query2("UPDATE transfer_history SET active = '0' WHERE last_announce < #{t - 2*ANNOUNCE_INTERVAL}");
 		puts "Cleaning2 took #{Time.now.to_f - t2} seconds."
 	end
 
@@ -329,7 +354,7 @@ class Tracker
 		query += "\nON DUPLICATE KEY UPDATE Uploaded = Uploaded + VALUES(Uploaded), Downloaded = Downloaded + VALUES(Downloaded), rawdl = rawdl + VALUES(rawdl), rawup = rawup + VALUES(rawup)"
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
-			@db.query(query)
+			@db.query2(query)
 		end
 		puts "Updating user stats took #{Time.now.to_f - t} seconds."
 
@@ -360,8 +385,8 @@ class Tracker
 		puts "--Generation of query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			#puts query
-			@db.query(query)
-			@db.query(query2)
+			@db.query2(query)
+			@db.query2(query2)
 		end
 		puts "Updating transfer history took #{Time.now.to_f - t} seconds"
 		
@@ -385,7 +410,7 @@ class Tracker
 		puts "--Generation of torrents query #{Time.now.to_f - t} seconds."
 		if counter > 0
 			#puts query
-			@db.query(query)
+			@db.query2(query)
 		end
 		puts "Updating torrents table took #{Time.now.to_f - t} seconds"
 	end
@@ -500,7 +525,7 @@ class Tracker
 			if event == 'completed' #increment snatch
 				peer[:delta_snatch] += 1
 				torrent[:delta_snatch] += 1
-				@db.query("UPDATE transfer_history SET snatched_time = '#{t}' WHERE uid = '#{peer[:id]}' AND fid = '#{torrent[:id]}'")
+				@db.query2("UPDATE transfer_history SET snatched_time = '#{t}' WHERE uid = '#{peer[:id]}' AND fid = '#{torrent[:id]}'")
 			end
 		end
 		

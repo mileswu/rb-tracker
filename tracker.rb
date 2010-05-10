@@ -131,6 +131,10 @@ class Mysql
 				puts q
 				@stash.insert(q, 0)
 				puts "DEADLOCK. Will retry later"
+				f = File.open("deadlocks.log", "a+")
+				f.puts q
+				f.puts Time.now.inspect
+				f.close
 			else
 				raise
 			end

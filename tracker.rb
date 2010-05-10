@@ -133,7 +133,7 @@ class Mysql
 				puts "DEADLOCK. Will retry later"
 				f = File.open("deadlocks.log", "a+")
 				f.puts q
-				f.puts Time.now.inspect
+				f.puts Time::Time.now.inspect
 				f.puts self.errno
 				f.close
 			#else

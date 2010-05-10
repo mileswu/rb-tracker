@@ -127,18 +127,17 @@ class Mysql
 				self.query(q)
 			end
 		rescue Mysql::Error => err
-			#if self.errno == 1210
-				puts q
+			if self.errno == 1213 or self.errno == 1205
 				@stash.insert(0, q)
 				puts "DEADLOCK. Will retry later"
 				f = File.open("deadlocks.log", "a+")
-				f.puts q
-				f.puts Time::Time.now.inspect
+				f.puts ::Time.now.inspect
 				f.puts self.errno
+				f.puts self.error
 				f.close
-			#else
-			#	raise
-			#end
+			else
+				raise
+			end
 		end
 	end
 
@@ -150,6 +149,7 @@ class Tracker
 
 	def initialize
 		Thread.abort_on_exception = true
+		File.open("deadlocks.log", "a+").close
 
 		@db = Mysql.real_connect('localhost', MYSQL_USER, MYSQL_PASS, MYSQL_DB)
 		@db.reconnect = true

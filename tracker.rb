@@ -432,22 +432,20 @@ class Tracker
 		get_vars = {}
 
 		get_vars = parse_get_vars(env['QUERY_STRING'], env['QUERY_STRING'].length)
-		
-		get_vars['info_hash'] = quick_cgi_unescape(get_vars['info_hash'],get_vars['info_hash'].length)
-		get_vars['peer_id'] = quick_cgi_unescape(get_vars['peer_id'],get_vars['peer_id'].length)
+	
+		return simple_response({'failure reason' => 'Invalid Request'}.bencode) if get_vars['info_hash'].nil? or get_vars['peer_id'].nil?
+		info_hash = quick_cgi_unescape(get_vars['info_hash'],get_vars['info_hash'].length)
+		peer_id = quick_cgi_unescape(get_vars['peer_id'],get_vars['peer_id'].length)
 		
 		# GET requests of interest are:
 		#   info_hash, peer_id, port, uploaded, downloaded, left,    <-- REQUIRED
 		#   compact, no_peer_id, event, ip, numwant, key, trackerid  <--- optional
 		
-
-		info_hash = get_vars['info_hash']
-		peer_id = get_vars['peer_id']
 		port = get_vars['port']
 		uploaded = get_vars['uploaded']
 		downloaded = get_vars['downloaded']
 		left = get_vars['left']
-		if info_hash.nil? or info_hash == '' or peer_id.nil? or peer_id == '' or port.nil? or port == '' or uploaded.nil? or uploaded == '' or downloaded.nil? or downloaded == '' or left.nil? or left == ''
+		if info_hash == '' or peer_id == '' or port.nil? or port == '' or uploaded.nil? or uploaded == '' or downloaded.nil? or downloaded == '' or left.nil? or left == ''
 			return simple_response({'failure reason' => 'Invalid Request'}.bencode)
 		end
 		begin
@@ -545,8 +543,13 @@ class Tracker
 					  'min interval' => MIN_INTERVAL
 		}
 
-		n = get_vars['numwant'].to_i
-		if n < 0 or n > 50
+		numwant = get_vars['numwant']
+		if numwant
+			n = numwant.to_i
+			if n < 0 or n > 50
+				n = 50
+			end
+		else
 			n = 50
 		end
 

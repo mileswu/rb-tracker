@@ -495,7 +495,14 @@ class Tracker
 			return simple_response("Come again...") #ignore it
 			#peers.delete(peer_id) # Remove him from the peers !!!MASSIVE. This can cause loss of stats!!!
 		else # Update the IP Address/Port
-			peer[:ip] = get_vars['ip'] ? get_vars['ip'] : env[IPADDRKEY] 
+			if(get_vars['ip'])
+				peer[:ip] = get_vars['ip']
+			elsif(env[IPADDRKEY] == '127.0.0.1')
+				peer[:ip] = env[HTTP_X_REAL_IP]
+			else
+				peer[:ip] = env[IPADDRKEY] 
+			end
+
 			peer[:port] = port
 			peer[:compact] = hton_ip(peer[:ip]) + [peer[:port]].pack('n') #Store this for speed
 		

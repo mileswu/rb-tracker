@@ -156,6 +156,7 @@ class Tracker
 
 		@mutex = Mutex.new
 		@start_time = Time.now
+		@counter = 0
 
 		read_marshal
 		read_client_whitelists
@@ -171,6 +172,8 @@ class Tracker
 	
 	def call(env)
 		@mutex.synchronize do
+			@counter +=1 
+			puts @counter.to_f/(Time.now.to_f - @start_time.to_f)
 			path = env['PATH_INFO']
 			if(path[-9..-1] == '/announce') # format is /<passkey>/announce
 				return announce(env)

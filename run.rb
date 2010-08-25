@@ -15,5 +15,6 @@ app = Rack::Builder.new do
 end
 
 #Ebb.start_server(app, :Port=>3000)
-Rack::Handler::Mongrel.run(app, :Port=>34000)
+Rack::Handler::Thin.run(app, :Port=>34000)
+#Rack::Handler::Mongrel.run(app, :Port=>34000)
 

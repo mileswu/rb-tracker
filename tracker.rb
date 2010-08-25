@@ -498,7 +498,7 @@ class Tracker
 			if(get_vars['ip'])
 				peer[:ip] = get_vars['ip']
 			elsif(env[IPADDRKEY] == '127.0.0.1')
-				peer[:ip] = env[HTTP_X_REAL_IP]
+				peer[:ip] = env['HTTP_X_REAL_IP']
 			else
 				peer[:ip] = env[IPADDRKEY] 
 			end
